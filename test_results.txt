@@ -1,0 +1,376 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-9.0.2, pluggy-1.6.0 -- /home/jules/.pyenv/versions/3.12.12/bin/python3.12
+cachedir: .pytest_cache
+rootdir: /app
+plugins: base-url-2.1.0, playwright-0.7.2
+collecting ... collected 15 items
+
+tests/test_qa_guide.py::TestSettingsTab::test_card_layout_responsive[chromium] PASSED [  6%]
+tests/test_qa_guide.py::TestSettingsTab::test_smart_headers[chromium] FAILED [ 13%]
+tests/test_qa_guide.py::TestSettingsTab::test_robust_parsing[chromium] FAILED [ 20%]
+tests/test_qa_guide.py::TestSettingsTab::test_validator_toggle[chromium] PASSED [ 26%]
+tests/test_qa_guide.py::TestSettingsTab::test_auto_approve[chromium] FAILED [ 33%]
+tests/test_qa_guide.py::TestResultsTab::test_upload_and_approve[chromium] FAILED [ 40%]
+tests/test_qa_guide.py::TestResultsTab::test_merge_column[chromium] PASSED [ 46%]
+tests/test_qa_guide.py::TestResultsTab::test_delete_row[chromium] PASSED [ 53%]
+tests/test_qa_guide.py::TestResultsTab::test_rename_table[chromium] PASSED [ 60%]
+tests/test_qa_guide.py::TestResultsTab::test_pagination[chromium] FAILED [ 66%]
+tests/test_qa_guide.py::TestTableEditor::test_editor_load[chromium] FAILED [ 73%]
+tests/test_qa_guide.py::TestTableEditor::test_editor_cell_edit[chromium] PASSED [ 80%]
+tests/test_qa_guide.py::TestOutputTab::test_export_batch[chromium] PASSED [ 86%]
+tests/test_qa_guide.py::TestEndToEnd::test_scenario_a_quick_fix[chromium] FAILED [ 93%]
+tests/test_qa_guide.py::TestEndToEnd::test_scenario_c_complex_header[chromium] PASSED [100%]
+
+=================================== FAILURES ===================================
+_________________ TestSettingsTab.test_smart_headers[chromium] _________________
+
+self = <test_qa_guide.TestSettingsTab object at 0x7fb49bd5cad0>
+app = <Page url='http://localhost:8000/index.html'>
+
+    def test_smart_headers(self, app: Page):
+        """2.1 Settings Tab - Smart Headers."""
+        app.get_by_text("Settings").click()
+        # Toggle Smart Headers
+        # Find input associated with "Smart Header Naming"
+        # Since I don't have exact ID, I'll find by label text
+        toggle = app.locator(".setting-item", has_text="Smart Header Naming").locator("input[type=checkbox]")
+        # It defaults to true. Let's toggle it.
+>       toggle.uncheck()
+
+tests/test_qa_guide.py:91:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/sync_api/_generated.py:17989: in uncheck
+    self._sync(
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/_impl/_locator.py:685: in uncheck
+    return await self._frame.uncheck(
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/_impl/_frame.py:859: in uncheck
+    await self._channel.send("uncheck", self._timeout, locals_to_params(locals()))
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/_impl/_connection.py:69: in send
+    return await self._connection.wrap_api_call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <playwright._impl._connection.Connection object at 0x7fb49c516390>
+cb = <function Channel.send.<locals>.<lambda> at 0x7fb49ba562a0>
+is_internal = False, title = None
+
+    async def wrap_api_call(
+        self, cb: Callable[[], Any], is_internal: bool = False, title: str = None
+    ) -> Any:
+        if self._api_zone.get():
+            return await cb()
+        task = asyncio.current_task(self._loop)
+        st: List[inspect.FrameInfo] = getattr(
+            task, "__pw_stack__", None
+        ) or inspect.stack(0)
+
+        parsed_st = _extract_stack_trace_information_from_stack(st, is_internal, title)
+        self._api_zone.set(parsed_st)
+        try:
+            return await cb()
+        except Exception as error:
+>           raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E           playwright._impl._errors.TimeoutError: Locator.uncheck: Timeout 30000ms exceeded.
+E           Call log:
+E             - waiting for locator(".setting-item").filter(has_text="Smart Header Naming").locator("input[type=checkbox]")
+E               - locator resolved to <input checked type="checkbox" onchange="toggleSetting('smartHeaderNaming')"/>
+E             - attempting click action
+E               2 × waiting for element to be visible, enabled and stable
+E                 - element is not stable
+E               - retrying click action
+E               - waiting 20ms
+E               2 × waiting for element to be visible, enabled and stable
+E                 - element is not stable
+E               - retrying click action
+E                 - waiting 100ms
+E               56 × waiting for element to be visible, enabled and stable
+E                  - element is not visible
+E                - retrying click action
+E                  - waiting 500ms
+
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/_impl/_connection.py:559: TimeoutError
+________________ TestSettingsTab.test_robust_parsing[chromium] _________________
+
+self = <test_qa_guide.TestSettingsTab object at 0x7fb49bd5d130>
+app = <Page url='http://localhost:8000/index.html'>
+
+    def test_robust_parsing(self, app: Page):
+        """2.1 Settings Tab - Robust Parsing."""
+        app.get_by_text("Settings").click()
+        toggle = app.locator(".setting-item", has_text="Robust Parsing").locator("input[type=checkbox]")
+>       toggle.check()
+
+tests/test_qa_guide.py:100:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/sync_api/_generated.py:15541: in check
+    self._sync(
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/_impl/_locator.py:146: in check
+    return await self._frame.check(self._selector, strict=True, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/_impl/_frame.py:847: in check
+    await self._channel.send("check", self._timeout, locals_to_params(locals()))
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/_impl/_connection.py:69: in send
+    return await self._connection.wrap_api_call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <playwright._impl._connection.Connection object at 0x7fb49c516390>
+cb = <function Channel.send.<locals>.<lambda> at 0x7fb49b9faca0>
+is_internal = False, title = None
+
+    async def wrap_api_call(
+        self, cb: Callable[[], Any], is_internal: bool = False, title: str = None
+    ) -> Any:
+        if self._api_zone.get():
+            return await cb()
+        task = asyncio.current_task(self._loop)
+        st: List[inspect.FrameInfo] = getattr(
+            task, "__pw_stack__", None
+        ) or inspect.stack(0)
+
+        parsed_st = _extract_stack_trace_information_from_stack(st, is_internal, title)
+        self._api_zone.set(parsed_st)
+        try:
+            return await cb()
+        except Exception as error:
+>           raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E           playwright._impl._errors.TimeoutError: Locator.check: Timeout 30000ms exceeded.
+E           Call log:
+E             - waiting for locator(".setting-item").filter(has_text="Robust Parsing").locator("input[type=checkbox]")
+
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/_impl/_connection.py:559: TimeoutError
+_________________ TestSettingsTab.test_auto_approve[chromium] __________________
+
+self = <test_qa_guide.TestSettingsTab object at 0x7fb49bd5ddf0>
+app = <Page url='http://localhost:8000/index.html'>
+
+    def test_auto_approve(self, app: Page):
+        """2.1 Settings Tab - Auto-Approve."""
+        app.get_by_text("Settings").click()
+        toggle = app.locator(".setting-item", has_text="Auto-Approve").locator("input[type=checkbox]")
+>       toggle.check()
+
+tests/test_qa_guide.py:127:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/sync_api/_generated.py:15541: in check
+    self._sync(
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/_impl/_locator.py:146: in check
+    return await self._frame.check(self._selector, strict=True, **params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/_impl/_frame.py:847: in check
+    await self._channel.send("check", self._timeout, locals_to_params(locals()))
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/_impl/_connection.py:69: in send
+    return await self._connection.wrap_api_call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <playwright._impl._connection.Connection object at 0x7fb49c516390>
+cb = <function Channel.send.<locals>.<lambda> at 0x7fb49b9fae80>
+is_internal = False, title = None
+
+    async def wrap_api_call(
+        self, cb: Callable[[], Any], is_internal: bool = False, title: str = None
+    ) -> Any:
+        if self._api_zone.get():
+            return await cb()
+        task = asyncio.current_task(self._loop)
+        st: List[inspect.FrameInfo] = getattr(
+            task, "__pw_stack__", None
+        ) or inspect.stack(0)
+
+        parsed_st = _extract_stack_trace_information_from_stack(st, is_internal, title)
+        self._api_zone.set(parsed_st)
+        try:
+            return await cb()
+        except Exception as error:
+>           raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E           playwright._impl._errors.TimeoutError: Locator.check: Timeout 30000ms exceeded.
+E           Call log:
+E             - waiting for locator(".setting-item").filter(has_text="Auto-Approve").locator("input[type=checkbox]")
+E               - locator resolved to <input type="checkbox" onchange="toggleSetting('autoApprove')"/>
+E             - attempting click action
+E               2 × waiting for element to be visible, enabled and stable
+E                 - element is not stable
+E               - retrying click action
+E               - waiting 20ms
+E               2 × waiting for element to be visible, enabled and stable
+E                 - element is not stable
+E               - retrying click action
+E                 - waiting 100ms
+E               56 × waiting for element to be visible, enabled and stable
+E                  - element is not visible
+E                - retrying click action
+E                  - waiting 500ms
+
+/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/playwright/_impl/_connection.py:559: TimeoutError
+_______________ TestResultsTab.test_upload_and_approve[chromium] _______________
+
+self = <test_qa_guide.TestResultsTab object at 0x7fb49bd5dbb0>
+app = <Page url='http://localhost:8000/index.html'>
+
+    def test_upload_and_approve(self, app: Page):
+        """2.2 Results Tab - Table Approval."""
+        app.locator("#file_upload").set_input_files(SIMPLE_DOCX)
+        app.locator("#btn_extract").click()
+
+        expect(app.locator(".table-tab-item")).to_have_count(2)
+
+        # Select first table
+        app.locator(".table-tab-item").first.click()
+
+        # Approve
+        approve_btn = app.locator(".btn-approve")
+        approve_btn.click()
+
+        # Verify sidebar item class
+>       expect(app.locator(".table-tab-item").first).to_have_class(re.compile(r"approved"))
+E       AssertionError: Locator expected to have class 're.compile('approved')'
+E       Actual value: table-tab-item
+E       Call log:
+E         - Expect "to_have_class" with timeout 5000ms
+E         - waiting for locator(".table-tab-item").first
+E           9 × locator resolved to <div class="table-tab-item">…</div>
+E             - unexpected value "table-tab-item"
+
+tests/test_qa_guide.py:154: AssertionError
+___________________ TestResultsTab.test_pagination[chromium] ___________________
+
+self = <test_qa_guide.TestResultsTab object at 0x7fb49bd5f5c0>
+app = <Page url='http://localhost:8000/index.html'>
+
+    def test_pagination(self, app: Page):
+        """2.2 Results Tab - Pagination."""
+        app.locator("#file_upload").set_input_files(HUGE_DOCX)
+        app.locator("#btn_extract").click()
+
+        # Wait for pagination
+        expect(app.locator(".page-tab-btn")).to_have_count(55, timeout=60000)
+
+        # Go to page 2
+        app.locator(".page-tab-btn").nth(1).click() # Index 1 is Page 2
+
+        # Verify table list updates (Huge doc has 1 table per page)
+        expect(app.locator(".table-tab-item")).to_have_count(1)
+>       expect(app.locator(".table-tab-item").first).to_contain_text("P2-Col1") # Assuming auto-name picks up content or just check content
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Locator expected to contain text 'P2-Col1'
+E       Actual value:
+E
+E
+E                       Content for page 2...
+E                       1×2 | low
+E
+E
+E       Call log:
+E         - Expect "to_contain_text" with timeout 5000ms
+E         - waiting for locator(".table-tab-item").first
+E           9 × locator resolved to <div class="table-tab-item">…</div>
+E             - unexpected value "
+E
+E
+E                       Content for page 2...
+E                       1×2 | low
+E
+E               "
+
+tests/test_qa_guide.py:234: AssertionError
+__________________ TestTableEditor.test_editor_load[chromium] __________________
+
+self = <test_qa_guide.TestTableEditor object at 0x7fb49bd5fc80>
+app = <Page url='http://localhost:8000/index.html'>
+
+    def test_editor_load(self, app: Page):
+        """2.3 Table Editor - Load Table."""
+        app.locator("#file_upload").set_input_files(SIMPLE_DOCX)
+        app.locator("#btn_extract").click()
+
+        app.get_by_text("Table Editor").click()
+
+        # Select Page 1
+        app.locator("#editor-page-select").select_option("1")
+        # Select Table 1
+        # Need to know the value (index). Table 1 is likely index 0.
+        app.locator("#editor-table-select").select_option("0")
+
+        # Check grid loaded
+>       expect(app.locator(".editor-table")).to_be_visible()
+E       AssertionError: Locator expected to be visible
+E       Actual value: None
+E       Error: element(s) not found
+E       Call log:
+E         - Expect "to_be_visible" with timeout 5000ms
+E         - waiting for locator(".editor-table")
+
+tests/test_qa_guide.py:251: AssertionError
+_______________ TestEndToEnd.test_scenario_a_quick_fix[chromium] _______________
+
+self = <test_qa_guide.TestEndToEnd object at 0x7fb49bd850d0>
+app = <Page url='http://localhost:8000/index.html'>
+clean_exports = '/app/test_exports'
+
+    def test_scenario_a_quick_fix(self, app: Page, clean_exports):
+        """Scenario A: The 'Quick Fix'."""
+        # Flow: Upload -> Click Table -> Edit Cell -> Approve -> Output -> Export
+        app.locator("#file_upload").set_input_files(SIMPLE_DOCX)
+        app.locator("#btn_extract").click()
+
+        # Click Table
+        app.locator(".table-tab-item").first.click()
+
+        # Edit Cell (in Results tab, implied by "Quick Fix" but user might use Editor.
+        # Guide says "Results Tab (Interactive Extraction) ... Cell Edit -> Click cell".
+        # Wait, Results tab is usually read-only or has limited edit?
+        # No, Results tab has `contenteditable` inputs in my previous reading?
+        # `js/results_tab.js`: `<td>${escapeHTML(cell || '')}</td>` - NOT contenteditable!
+        # `js/table_editor.js`: `contenteditable="true"`
+        # So "Quick Fix" implies using Table Editor OR the guide assumes Results tab is editable.
+        # BUT: `js/results_tab.js` has `renderTableInteractive`. It renders `td`.
+        # Wait, `updateHeaderName` exists. But data rows?
+        # `<td>${escapeHTML(cell || '')}</td>`. It's not editable in Results Tab.
+        # So User MUST go to Table Editor?
+        # Or maybe I missed something.
+        # Guide: "2.3 Table Editor (Deep Editing) ... Cell Edit -> Click cell".
+        # Guide: "Scenario A ... Upload -> Click Table -> Edit Cell (Typo fix)".
+        # "Click Table" could mean "Select in Sidebar" -> "Edit in Editor".
+        # Let's assume Table Editor for editing.
+
+        app.get_by_text("Table Editor").click()
+        app.locator("#editor-table-select").select_option("0")
+
+        # Edit
+        cell = app.locator(".editor-table td").nth(1)
+        cell.click()
+        cell.fill("FixedTypo")
+        cell.blur()
+
+        # Approve (Back to Results)
+        app.get_by_text("Results").click()
+        app.locator(".table-tab-item").first.click()
+        app.locator(".btn-approve").click()
+
+        # Output
+        app.get_by_text("Output").click()
+        app.evaluate(f"OutputTab.targetPath = '{clean_exports.replace(os.sep, '/')}'")
+        app.evaluate("OutputTab.render()")
+        app.locator("button[onclick='OutputTab.selectAllVerified()']").click()
+        app.locator("button[onclick=\"OutputTab.exportBatch('individual')\"]").click()
+
+        expect(app.locator("#status")).to_contain_text("Export Successful")
+
+        # Verify
+        found = False
+        for fname in os.listdir(clean_exports):
+            with open(os.path.join(clean_exports, fname), 'r') as f:
+                if "FixedTypo" in f.read():
+                    found = True
+                    break
+>       assert found
+E       assert False
+
+tests/test_qa_guide.py:356: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_qa_guide.py::TestSettingsTab::test_smart_headers[chromium]
+FAILED tests/test_qa_guide.py::TestSettingsTab::test_robust_parsing[chromium]
+FAILED tests/test_qa_guide.py::TestSettingsTab::test_auto_approve[chromium]
+FAILED tests/test_qa_guide.py::TestResultsTab::test_upload_and_approve[chromium]
+FAILED tests/test_qa_guide.py::TestResultsTab::test_pagination[chromium] - As...
+FAILED tests/test_qa_guide.py::TestTableEditor::test_editor_load[chromium] - ...
+FAILED tests/test_qa_guide.py::TestEndToEnd::test_scenario_a_quick_fix[chromium]
+=================== 7 failed, 8 passed in 132.23s (0:02:12) ====================
