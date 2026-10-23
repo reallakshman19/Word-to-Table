@@ -575,7 +575,7 @@
       for (let r = currentRefined.dataStartRow; r < grid.length; r++) {
         if (excludeRows.includes(r)) continue;
         const row = grid[r];
-        html += `<tr><td class="row-idx">${outRowIdx}</td>`;
+        html += `<tr><td class="row-idx" title="Source Row ${r}">${r}</td>`;
         if (hasGroup) {
           const gSrc = currentRefined.groupSource || { tableIndex: table.physicalIndex, rowIndex: 0, cellIndex: 0, span: 1 };
           html += `<td class="group-cell" title="Derived from Title (Table #${gSrc.tableIndex}, Row ${gSrc.rowIndex}, Cell ${gSrc.cellIndex}, Span ${gSrc.span}): ${esc(currentRefined.groupColumn)} -> Row ${r}">` +
