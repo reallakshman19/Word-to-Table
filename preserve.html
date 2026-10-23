@@ -12,14 +12,15 @@ pre{white-space:pre-wrap;word-break:break-word;background:#edf2f5;padding:1rem;b
 </head>
 <body>
 <h1>T-PRESERVE — synthetic scaffold</h1>
-<p class="warning"><strong>Not B1-qualified.</strong> This is an isolated browser custody/inventory prototype. No original fixture archives are included or tested. ZIP entries are counted without extracting or interpreting Word content. Storage may be blocked by browser settings; no backend is used.</p>
+<p class="warning"><strong>Not B1-qualified.</strong> This is an isolated browser custody/inventory prototype. No source fixture archives are distributed with this harness. Qualification requires independent original-input and browser evidence. ZIP entries are counted without extracting or interpreting Word content. Storage may be blocked by browser settings; no backend is used.</p>
 <label for="files">Select .docx ZIP files (legacy .doc is deferred)</label>
 <input id="files" type="file" accept=".docx" multiple>
 <div>
 <button id="save" type="button">Preserve selected</button>
 <button id="cancel" type="button">Cancel in-flight</button>
 <button id="reopen" type="button">Reopen last stored</button>
-<button id="list" type="button">List stored records</button>
+<button id="list" type="button">List stored records (metadata)</button>
+<button id="verify-all" type="button">Reverify all stored sources</button>
 </div>
 <p id="status" role="status" aria-live="polite">Idle. Storage not yet verified.</p>
 <pre id="details" aria-label="Custody and inventory details">No results.</pre>
@@ -59,5 +60,6 @@ document.querySelector('#cancel').addEventListener('click', () => {
 });
 document.querySelector('#reopen').addEventListener('click', () => action(async () => show(await session.reopen())));
 document.querySelector('#list').addEventListener('click', () => action(async () => show({status:'stored-records-unverified', records:await store.list()})));
+document.querySelector('#verify-all').addEventListener('click', () => action(async () => show(await session.recoverAll())));
 </script>
 </body></html>

@@ -54,13 +54,16 @@ export async function inventoryZip(source) {
     const nameHex = hex(nameBytes);
     // Non-UTF-8 ZIP names have an unspecified legacy code page: preserve bytes, do not guess.
     const utf8 = !!(flags & 0x800);
-    let name = null;
+    let name = null, decodingProblem = null;
     if (utf8) {
       try { name = new TextDecoder('utf-8', { fatal: true }).decode(nameBytes); }
-      catch { /* preserve the raw bytes and visibly mark the name opaque */ }
+      catch { decodingProblem = 'INVALID_UTF8_NAME'; }
+    } else {
+      decodingProblem = 'LEGACY_ENCODING_UNSPECIFIED';
     }
     const entry = {
-      index, name, nameBytesHex: nameHex, nameEncoding: utf8 ? 'utf8' : 'legacy-unknown',
+      index, name, nameBytesHex: nameHex, nameEncoding: utf8 ? (decodingProblem ? 'utf8-invalid' : 'utf8') : 'legacy-unknown',
+      decodingProblem,
       flags, method, crc32, compressedSize, uncompressedSize, localOffset,
       centralOffset: p, disk, extraBytesHex: hex(b.subarray(p + 46 + nameLen, p + 46 + nameLen + extraLen)),
       commentBytesHex: hex(b.subarray(p + 46 + nameLen + extraLen, next)),
@@ -83,7 +86,7 @@ export async function inventoryZip(source) {
       const localName = b.subarray(localOffset + 30, localOffset + 30 + localNameLen);
       if (!has(localOffset, 30 + localNameLen + localExtraLen) ||
           !has(dataOffset, compressedSize) || hex(localName) !== nameHex ||
-          u16(localOffset + 8) !== method) {
+          u16(localOffset + 8) !== method || u16(localOffset + 6) !== flags) {
         entry.status = 'read-error'; entry.problem = 'LOCAL_DATA_MISMATCH';
       } else {
         entry.dataOffset = dataOffset;
