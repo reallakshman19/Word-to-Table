@@ -1,0 +1,19 @@
+name: T-PRESERVE synthetic tests
+on:
+  pull_request:
+    paths:
+      - 'js/core/**'
+      - 'preserve.html'
+      - 'tests/preserve/**'
+      - '.github/workflows/preserve-tests.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/preserve/*.test.mjs
