@@ -253,6 +253,18 @@ body {
   border-color: var(--text-muted);
 }
 
+.btn-batch {
+  background: var(--purple, #bb9af7);
+  color: #1a1b26;
+  font-weight: 600;
+  border-color: #bb9af7;
+}
+
+.btn-batch:hover {
+  background: #cbb2f9;
+  border-color: #cbb2f9;
+}
+
 .auto-rule-badge {
   font-size: 0.75rem;
   padding: 4px 10px;

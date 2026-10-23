@@ -71,6 +71,7 @@
         <div class="control-group">
           <button class="btn btn-auto" id="btnAutoHeader" onclick="app.applyAutoHeader()" title="Apply automatic header/data suggestion (Auto v3)">⚡ Auto</button>
           <button class="btn btn-refine" id="btnRefineTable" onclick="app.applyRefineTableForm()" title="Auto Refine table form to exactly one header row">✨ Auto Refine table form</button>
+          <button class="btn btn-batch" id="btnBatchRun" onclick="app.runBatchProcess()" title="Batch run Auto + Refine on all filtered tables and export before/after HTML">⚡ Batch run</button>
           <button class="btn btn-undo-refine" id="btnUndoRefine" onclick="app.undoRefineTableForm()" style="display:none" title="Restore header before refinement">↩ Undo Refine</button>
         </div>
         <div class="control-group">
@@ -128,6 +129,7 @@
   <script src="js/auto-header-v3.js"></script>
   <script src="js/table-refiner.js"></script>
   <script src="js/csv-exporter.js"></script>
+  <script src="js/batch-exporter.js"></script>
   <script src="js/app.js"></script>
 
 </body>

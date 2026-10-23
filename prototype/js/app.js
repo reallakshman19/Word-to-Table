@@ -525,6 +525,100 @@
     }
   }
 
+  // ─── Batch Run (D2T-S1.2 Batch B1) ───
+
+  function runBatchProcess() {
+    if (!parseResult || !parseResult.tables || parseResult.tables.length === 0) {
+      alert('Please load a .docx file before running the batch.');
+      return;
+    }
+
+    // Filter tables using "Only Tables with data" predicate
+    const filteredTables = parseResult.tables.filter(isTableWithData);
+    if (filteredTables.length === 0) {
+      alert('No tables found in "Only Tables with data" filter.');
+      return;
+    }
+
+    const docName = fileName || 'document.docx';
+    const baseName = docName.replace(/\.docx?$/i, '');
+
+    // 1. Build File 1: <docname>_before.html BEFORE anything changes
+    const beforeHtml = window.BatchExporter.generateBeforeHtml(filteredTables, baseName);
+
+    // 2. Run real handlers: applyAutoHeader then applyRefineTableForm on each table in document order
+    const batchResults = [];
+
+    for (let i = 0; i < filteredTables.length; i++) {
+      const t = filteredTables[i];
+      try {
+        // Select table (updates selector, card, etc.)
+        selectTable(t.physicalIndex);
+
+        // Run real Auto handler
+        applyAutoHeader();
+        const autoSugg = autoRuleFired;
+
+        // Run real Refine handler
+        applyRefineTableForm();
+        const refRes = currentRefined;
+
+        batchResults.push({
+          table: t,
+          status: 'OK',
+          autoRule: autoSugg ? autoSugg.ruleName : 'Auto',
+          refineRule: refRes ? (refRes.ruleName || refRes.rule) : 'Nothing to refine',
+          refined: refRes,
+          error: null
+        });
+      } catch (err) {
+        batchResults.push({
+          table: t,
+          status: 'FAILED',
+          autoRule: autoRuleFired ? autoRuleFired.ruleName : 'Unknown',
+          refineRule: 'Failed',
+          refined: null,
+          error: err.message || String(err)
+        });
+      }
+    }
+
+    // 3. Build File 2: <docname>_after.html AFTER the batch
+    const afterHtml = window.BatchExporter.generateAfterHtml(batchResults, baseName);
+
+    // 4. Build File 3: <docname>_compare.html (side-by-side comparison)
+    const compareHtml = window.BatchExporter.generateCompareHtml(filteredTables, batchResults, baseName);
+
+    // 5. Trigger browser downloads
+    if (window.BatchExporter && typeof window.BatchExporter.downloadHtmlFile === 'function') {
+      window.BatchExporter.downloadHtmlFile(baseName + '_before.html', beforeHtml);
+      setTimeout(() => {
+        window.BatchExporter.downloadHtmlFile(baseName + '_after.html', afterHtml);
+      }, 250);
+      setTimeout(() => {
+        window.BatchExporter.downloadHtmlFile(baseName + '_compare.html', compareHtml);
+      }, 500);
+    }
+
+    // Summary notice
+    const okCount = batchResults.filter(r => r.status === 'OK').length;
+    const failedCount = batchResults.filter(r => r.status === 'FAILED').length;
+    if (refineRuleBadge) {
+      refineRuleBadge.style.display = '';
+      refineRuleBadge.innerHTML = `⚡ <strong>Batch Run Complete:</strong> ${okCount} OK, ${failedCount} FAILED. Downloaded before/after HTML.`;
+    }
+
+    // The batch leaves the app on the last table with Undo available
+    return {
+      beforeHtml,
+      afterHtml,
+      compareHtml,
+      batchResults,
+      okCount,
+      failedCount
+    };
+  }
+
   // ─── Table Rendering ───
 
   function getActiveTable() {
@@ -848,6 +942,7 @@
 
   window.app = {
     navigateToSource,
+    runBatchProcess,
     onFilterChange,
     onTableSelectChange,
     selectTableByPhysicalIndex,

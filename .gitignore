@@ -40,3 +40,8 @@ run_desktop.bat
 
 # Scratch files (builder local temporary scripts)
 scratch/
+
+# Batch generated HTML outputs (contain real document content)
+*_before.html
+*_after.html
+*_compare.html
