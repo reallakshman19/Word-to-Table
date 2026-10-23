@@ -24,6 +24,8 @@
   let filterMode = 'all';            // 'all' | 'data'
   let currentFoldedLabel = null;     // { text, labelRow, labelCol, targetRow, targetCol }
   let autoRuleFired = null;          // Last suggestion from AutoHeaderV3
+  let currentRefined = null;         // TableRefiner result
+  let preRefineState = null;         // Saved state before refinement for Undo
 
   // ─── DOM refs ───
   const $ = id => document.getElementById(id);
@@ -49,6 +51,9 @@
   const dataStartInput = $('dataStart');
   const btnAutoHeader = $('btnAutoHeader');
   const autoRuleBadge = $('autoRuleBadge');
+  const btnRefineTable = $('btnRefineTable');
+  const btnUndoRefine = $('btnUndoRefine');
+  const refineRuleBadge = $('refineRuleBadge');
   const btnDownloadCsv = $('btnDownloadCsv');
 
   // ─── File Input / Drag & Drop ───
@@ -91,6 +96,12 @@
     if (currentFoldedLabel && hr !== 1) {
       currentFoldedLabel = null;
     }
+    if (currentRefined) {
+      currentRefined = null;
+      preRefineState = null;
+      if (refineRuleBadge) refineRuleBadge.style.display = 'none';
+      if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+    }
     if (autoRuleFired) {
       autoRuleBadge.textContent = autoRuleFired.ruleName + ' (manually edited)';
     }
@@ -98,6 +109,12 @@
   });
 
   dataStartInput.addEventListener('change', () => {
+    if (currentRefined) {
+      currentRefined = null;
+      preRefineState = null;
+      if (refineRuleBadge) refineRuleBadge.style.display = 'none';
+      if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+    }
     if (autoRuleFired) {
       autoRuleBadge.textContent = autoRuleFired.ruleName + ' (manually edited)';
     }
@@ -243,7 +260,7 @@
 
     if (filterMode === 'data') {
       navCount.textContent = `(${filtered.length}/${totalCount})`;
-      if (filterHint) filterHint.textContent = `Filtered: >= 2 rows AND >= 2 grid cols (${filtered.length} tables)`;
+      if (filterHint) filterHint.textContent = `Filtered: >= 2 rows and >= 2 cols with text (${filtered.length} tables)`;
     } else {
       navCount.textContent = `(${totalCount})`;
       if (filterHint) filterHint.textContent = `Showing all ${totalCount} physical tables`;
@@ -288,10 +305,14 @@
     selectedPhysicalIndex = physIdx;
     tableSelect.value = String(physIdx);
 
-    // Reset auto-header suggestions and folded label on table switch
+    // Reset auto-header suggestions, folded label, and refinement on table switch
     currentFoldedLabel = null;
     autoRuleFired = null;
+    currentRefined = null;
+    preRefineState = null;
     autoRuleBadge.style.display = 'none';
+    if (refineRuleBadge) refineRuleBadge.style.display = 'none';
+    if (btnUndoRefine) btnUndoRefine.style.display = 'none';
 
     // Show controls
     tableControls.style.display = '';
@@ -326,7 +347,11 @@
     tableSelect.value = '';
     currentFoldedLabel = null;
     autoRuleFired = null;
+    currentRefined = null;
+    preRefineState = null;
     autoRuleBadge.style.display = 'none';
+    if (refineRuleBadge) refineRuleBadge.style.display = 'none';
+    if (btnUndoRefine) btnUndoRefine.style.display = 'none';
 
     tableControls.style.display = 'none';
     contentTabs.style.display = 'none';
@@ -362,6 +387,12 @@
     const t = parseResult.tables.find(x => x.physicalIndex === selectedPhysicalIndex);
     if (!t) return;
 
+    // Reset refine state when re-running Auto
+    currentRefined = null;
+    preRefineState = null;
+    if (refineRuleBadge) refineRuleBadge.style.display = 'none';
+    if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+
     // Call AutoHeaderV3 heuristic (pure, idempotent)
     const suggestion = window.AutoHeaderV3.suggest(t);
     autoRuleFired = suggestion;
@@ -383,6 +414,60 @@
     autoRuleBadge.style.display = '';
     autoRuleBadge.className = 'auto-rule-badge';
     autoRuleBadge.textContent = '⚡ ' + suggestion.ruleExplanation;
+
+    renderSelectedTable();
+  }
+
+  // ─── Auto Refine Table Form (D2T-S1.2) ───
+
+  function applyRefineTableForm() {
+    if (selectedPhysicalIndex <= 0 || !parseResult) return;
+    const t = getActiveTable();
+    if (!t) return;
+
+    const hr = parseInt(headerRowsSelect.value, 10);
+    const ds = Math.max(parseInt(dataStartInput.value, 10) || 0, 0);
+
+    // Save previous state for Undo
+    preRefineState = {
+      headerRowCount: hr,
+      dataStartRow: ds,
+      foldedLabel: currentFoldedLabel,
+      autoRuleFired: autoRuleFired ? { ...autoRuleFired } : null
+    };
+
+    const refined = window.TableRefiner.refine(t, hr, ds, currentFoldedLabel);
+    currentRefined = refined;
+
+    // Update header rows & data start inputs to refined state
+    headerRowsSelect.value = String(refined.headerRowCount);
+    dataStartInput.value = String(refined.dataStartRow);
+
+    // Display refined badge
+    if (refineRuleBadge) {
+      refineRuleBadge.style.display = '';
+      refineRuleBadge.innerHTML = `✨ <strong>[${esc(refined.rule)}]</strong> ${esc(refined.diagnostic)}`;
+    }
+    if (btnUndoRefine) {
+      btnUndoRefine.style.display = '';
+    }
+
+    renderSelectedTable();
+  }
+
+  function undoRefineTableForm() {
+    if (!preRefineState) return;
+
+    headerRowsSelect.value = String(preRefineState.headerRowCount);
+    dataStartInput.value = String(preRefineState.dataStartRow);
+    currentFoldedLabel = preRefineState.foldedLabel;
+    autoRuleFired = preRefineState.autoRuleFired;
+
+    currentRefined = null;
+    preRefineState = null;
+
+    if (refineRuleBadge) refineRuleBadge.style.display = 'none';
+    if (btnUndoRefine) btnUndoRefine.style.display = 'none';
 
     renderSelectedTable();
   }
@@ -413,6 +498,58 @@
     const grid = table.grid;
     if (!grid || grid.length === 0) {
       gridPanel.innerHTML = '<div class="notice notice-info">This table has no rows.</div>';
+      return;
+    }
+
+    // ─── Render Refined Table Form (D2T-S1.2) ───
+    if (currentRefined) {
+      const refinedHeaders = currentRefined.headers;
+      const hasGroup = Boolean(currentRefined.groupColumn);
+      const excludeRows = currentRefined.excludeRows || [];
+
+      let html = '<div class="grid-container"><table class="data-grid"><tbody>';
+      // Refined Header row (single row)
+      html += '<tr class="header-row"><td class="row-idx">H</td>';
+      for (let c = 0; c < refinedHeaders.length; c++) {
+        const hp = (currentRefined.headerProvenance && currentRefined.headerProvenance[c]) || {};
+        const srcTitle = (hp.sourceCells || []).map(sc => `R${sc.rowIndex} C${sc.cellIndex} ("${sc.rawText}")`).join(' + ');
+        html += `<th title="${esc(srcTitle)}"><strong>${esc(refinedHeaders[c])}</strong></th>`;
+      }
+      html += '</tr>';
+
+      // Refined Data rows
+      let outRowIdx = 0;
+      for (let r = currentRefined.dataStartRow; r < grid.length; r++) {
+        if (excludeRows.includes(r)) continue;
+        const row = grid[r];
+        html += `<tr><td class="row-idx">${outRowIdx}</td>`;
+        if (hasGroup) {
+          html += `<td style="font-weight:600; color:var(--accent)">${esc(currentRefined.groupColumn)}</td>`;
+        }
+        for (let c = 0; c < table.colCount; c++) {
+          const cell = row[c];
+          let content = '';
+          if (cell && cell.spanned) {
+            content = '<span class="spanned-cell">⬅ span</span>';
+          } else if (cell && cell.hasImage) {
+            content = '<span class="image-cell">🖼 [image]</span>';
+          } else if (cell && cell.hasNestedTable) {
+            content = `<span class="nested-cell">📋 [nested table ${cell.nestedTableIndex || ''}]</span>`;
+          } else {
+            content = esc(cell ? cell.text : '');
+          }
+          html += `<td title="Orig Row ${r}, Cell ${c}">${content}</td>`;
+        }
+        html += '</tr>';
+        outRowIdx++;
+      }
+      html += '</tbody></table></div>';
+
+      const banner = `<div class="notice notice-info">` +
+        `<strong>Refined Table Form [${esc(currentRefined.rule)}]:</strong> ${esc(currentRefined.diagnostic)} ` +
+        `(${refinedHeaders.length} columns, ${outRowIdx} data rows). Exactly 1 header row.</div>`;
+
+      gridPanel.innerHTML = banner + html;
       return;
     }
 
@@ -500,7 +637,10 @@
 
   function renderCsvPreview(table, headerRows, dataStart) {
     const exporter = new window.CsvExporter();
-    const options = { foldedLabel: currentFoldedLabel };
+    const options = {
+      foldedLabel: currentFoldedLabel,
+      refined: currentRefined,
+    };
     const { csv } = exporter.exportTable(table, headerRows, dataStart, options);
 
     const notice = '<div class="notice notice-warn">' +
@@ -515,7 +655,10 @@
 
   function renderProvenance(table, headerRows, dataStart) {
     const exporter = new window.CsvExporter();
-    const options = { foldedLabel: currentFoldedLabel };
+    const options = {
+      foldedLabel: currentFoldedLabel,
+      refined: currentRefined,
+    };
     const { provenance } = exporter.exportTable(table, headerRows, dataStart, options);
 
     let html = '<div class="notice notice-info">Every CSV cell has a companion provenance record ' +
@@ -524,14 +667,17 @@
     html += '<div style="overflow:auto; max-height:calc(100vh - 300px)">';
     html += '<table class="provenance-table"><thead><tr>' +
       '<th>CSV Row</th><th>CSV Col</th><th>Header</th><th>Raw Text</th>' +
-      '<th>Is Header</th><th>Source Table</th><th>Source Row</th><th>Source Cell</th>' +
-      '<th>Folded From (Rule 2)</th><th>File Hash</th><th>Part</th>' +
+      '<th>Is Header</th><th>Rule</th><th>Source Cells</th><th>Placeholder</th><th>Source Table</th><th>File Hash</th><th>Part</th>' +
       '</tr></thead><tbody>';
 
     for (const p of provenance) {
-      let foldedInfo = '—';
-      if (p.foldedFrom) {
-        foldedInfo = `<span style="color:var(--green)">Row ${p.foldedFrom.sourceRowIndex}, Cell ${p.foldedFrom.sourceCellIndex} ("${esc(p.foldedFrom.rawText)}")</span>`;
+      let sourceInfo = '—';
+      if (p.sourceCells && p.sourceCells.length > 0) {
+        sourceInfo = p.sourceCells.map(sc => `<span style="color:var(--green)">R${sc.rowIndex} C${sc.cellIndex} ("${esc(sc.rawText)}")</span>`).join(' + ');
+      } else if (p.foldedFrom) {
+        sourceInfo = `<span style="color:var(--green)">R${p.foldedFrom.sourceRowIndex} C${p.foldedFrom.sourceCellIndex} ("${esc(p.foldedFrom.rawText)}")</span>`;
+      } else if (p.sourceRowIndex >= 0) {
+        sourceInfo = `R${p.sourceRowIndex} C${p.sourceCellIndex}`;
       }
 
       html += '<tr>' +
@@ -540,10 +686,10 @@
         `<td>${esc(p.headerLabel)}</td>` +
         `<td class="mono">${esc(truncate(p.rawText, 50))}</td>` +
         `<td>${p.isHeader ? '✓' : ''}</td>` +
+        `<td>${p.rule ? `<span class="badge-sm">${esc(p.rule)}</span>` : '—'}</td>` +
+        `<td>${sourceInfo}</td>` +
+        `<td>${p.placeholder ? `<span class="badge-sm" style="color:var(--yellow)">${esc(p.placeholder)}</span>` : '—'}</td>` +
         `<td>#${p.sourceTableIndex}</td>` +
-        `<td>${p.sourceRowIndex}</td>` +
-        `<td>${p.sourceCellIndex}</td>` +
-        `<td>${foldedInfo}</td>` +
         `<td class="mono">${p.sourceFileHash ? p.sourceFileHash.substring(0, 10) + '…' : '—'}</td>` +
         `<td>${esc(p.sourcePart)}</td>` +
         '</tr>';
@@ -596,11 +742,15 @@
     const headerRows = parseInt(headerRowsSelect.value, 10);
     const dataStart = Math.max(parseInt(dataStartInput.value, 10) || 0, 0);
     const exporter = new window.CsvExporter();
-    const options = { foldedLabel: currentFoldedLabel };
+    const options = {
+      foldedLabel: currentFoldedLabel,
+      refined: currentRefined,
+    };
     const { csv } = exporter.exportTable(t, headerRows, dataStart, options);
 
     const safeName = (fileName || 'table').replace(/\.docx$/i, '');
-    const csvName = `${safeName}_table${t.physicalIndex}_h${headerRows}.csv`;
+    const refineTag = currentRefined ? `_refined_${currentRefined.rule.toLowerCase()}` : `_h${headerRows}`;
+    const csvName = `${safeName}_table${t.physicalIndex}${refineTag}.csv`;
     exporter.downloadCsv(csv, csvName);
   }
 
@@ -639,6 +789,8 @@
     onTableSelectChange,
     selectTableByPhysicalIndex,
     applyAutoHeader,
+    applyRefineTableForm,
+    undoRefineTableForm,
     switchTab,
     downloadSelectedCsv,
     isTableWithData,

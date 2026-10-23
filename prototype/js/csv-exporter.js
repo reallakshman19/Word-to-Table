@@ -170,22 +170,29 @@
       // Determine column count (max across all rows)
       const colCount = grid.reduce((max, row) => Math.max(max, row.length), 0);
 
-      // Build header labels
-      const headers = this._buildHeaders(grid, headerRowCount, colCount);
+      // ── Build header labels ──────────────────────────────────────────
+      const refined = options && options.refined ? options.refined : null;
+      let headers;
 
-      // If a folded label is present (Rule 2), fold its text into the target header cell
-      const foldedLabel = options && options.foldedLabel ? options.foldedLabel : null;
-      if (foldedLabel && foldedLabel.text) {
-        const targetCol = typeof foldedLabel.targetCol === 'number' ? foldedLabel.targetCol : 0;
-        if (targetCol >= 0 && targetCol < headers.length) {
-          const orig = headers[targetCol] || '';
-          // If empty or generic Column_X, fill it; otherwise prefix it
-          if (!orig || orig.trim() === '' || orig.startsWith('Column_')) {
-            headers[targetCol] = foldedLabel.text;
-          } else {
-            // Avoid duplicate prefixing on repeated calls
-            if (!orig.startsWith(foldedLabel.text)) {
-              headers[targetCol] = foldedLabel.text + ' ' + orig;
+      if (refined && refined.headers) {
+        headers = [...refined.headers];
+      } else {
+        headers = this._buildHeaders(grid, headerRowCount, colCount);
+
+        // If a folded label is present (Rule 2), fold its text into the target header cell
+        const foldedLabel = options && options.foldedLabel ? options.foldedLabel : null;
+        if (foldedLabel && foldedLabel.text) {
+          const targetCol = typeof foldedLabel.targetCol === 'number' ? foldedLabel.targetCol : 0;
+          if (targetCol >= 0 && targetCol < headers.length) {
+            const orig = headers[targetCol] || '';
+            // If empty or generic Column_X, fill it; otherwise prefix it
+            if (!orig || orig.trim() === '' || orig.startsWith('Column_')) {
+              headers[targetCol] = foldedLabel.text;
+            } else {
+              // Avoid duplicate prefixing on repeated calls
+              if (!orig.startsWith(foldedLabel.text)) {
+                headers[targetCol] = foldedLabel.text + ' ' + orig;
+              }
             }
           }
         }
@@ -208,37 +215,60 @@
       csvLines.push(headerCsvCells.join(','));
 
       // Provenance for header cells
-      for (let c = 0; c < colCount; c++) {
-        // Determine the source row index and cell index for provenance
-        const headerCell = (headerRowCount > 0 && grid[0] && grid[0][c]) ? grid[0][c] : null;
-        const sourceRow = headerCell && headerCell.provenance ? headerCell.provenance.rowIndex : (headerRowCount > 0 ? 0 : -1);
-        const sourceCell = headerCell && headerCell.provenance ? headerCell.provenance.cellIndex : (headerRowCount > 0 ? c : -1);
+      if (refined && refined.headerProvenance && refined.headerProvenance.length > 0) {
+        for (let c = 0; c < headers.length; c++) {
+          const hp = refined.headerProvenance[c] || {};
+          provenance.push({
+            csvRow: csvRowIndex,
+            csvCol: c,
+            sourceFileHash: fileHash,
+            sourcePart: sourcePart,
+            sourceTableIndex: tableIndex,
+            sourceRowIndex: hp.sourceRowIndex != null ? hp.sourceRowIndex : 0,
+            sourceCellIndex: hp.sourceCellIndex != null ? hp.sourceCellIndex : c,
+            rawText: headers[c],
+            headerLabel: headers[c],
+            isHeader: true,
+            rule: hp.rule || refined.rule,
+            sourceCells: hp.sourceCells || [],
+            foldedFrom: hp.foldedFrom || (hp.sourceCells && hp.sourceCells.length > 1 ? hp.sourceCells[1] : null),
+            placeholder: hp.placeholder || null
+          });
+        }
+      } else {
+        const foldedLabel = options && options.foldedLabel ? options.foldedLabel : null;
+        for (let c = 0; c < colCount; c++) {
+          // Determine the source row index and cell index for provenance
+          const headerCell = (headerRowCount > 0 && grid[0] && grid[0][c]) ? grid[0][c] : null;
+          const sourceRow = headerCell && headerCell.provenance ? headerCell.provenance.rowIndex : (headerRowCount > 0 ? 0 : -1);
+          const sourceCell = headerCell && headerCell.provenance ? headerCell.provenance.cellIndex : (headerRowCount > 0 ? c : -1);
 
-        const isFoldedCol = foldedLabel && (c === (foldedLabel.targetCol || 0));
-        const foldedFrom = isFoldedCol ? {
-          sourceFileHash: fileHash,
-          sourcePart: sourcePart,
-          sourceTableIndex: tableIndex,
-          sourceRowIndex: foldedLabel.labelRow,
-          sourceCellIndex: foldedLabel.labelCol,
-          rawText: foldedLabel.text,
-        } : null;
+          const isFoldedCol = foldedLabel && (c === (foldedLabel.targetCol || 0));
+          const foldedFrom = isFoldedCol ? {
+            sourceFileHash: fileHash,
+            sourcePart: sourcePart,
+            sourceTableIndex: tableIndex,
+            sourceRowIndex: foldedLabel.labelRow,
+            sourceCellIndex: foldedLabel.labelCol,
+            rawText: foldedLabel.text,
+          } : null;
 
-        const isPlc = Boolean(headerCell && (headerCell.isPlaceholder || (headerCell.provenance && headerCell.provenance.placeholder)));
-        provenance.push({
-          csvRow: csvRowIndex,
-          csvCol: c,
-          sourceFileHash: fileHash,
-          sourcePart: sourcePart,
-          sourceTableIndex: tableIndex,
-          sourceRowIndex: sourceRow,
-          sourceCellIndex: sourceCell,
-          rawText: headers[c],
-          headerLabel: headers[c],
-          isHeader: true,
-          foldedFrom: foldedFrom,
-          placeholder: isPlc ? 'placeholder shown' : null
-        });
+          const isPlc = Boolean(headerCell && (headerCell.isPlaceholder || (headerCell.provenance && headerCell.provenance.placeholder)));
+          provenance.push({
+            csvRow: csvRowIndex,
+            csvCol: c,
+            sourceFileHash: fileHash,
+            sourcePart: sourcePart,
+            sourceTableIndex: tableIndex,
+            sourceRowIndex: sourceRow,
+            sourceCellIndex: sourceCell,
+            rawText: headers[c],
+            headerLabel: headers[c],
+            isHeader: true,
+            foldedFrom: foldedFrom,
+            placeholder: isPlc ? 'placeholder shown' : null
+          });
+        }
       }
       csvRowIndex++;
 
@@ -248,18 +278,50 @@
 
       // ── Emit data rows ──────────────────────────────────────────────
       let nestedCounter = 0; // Running counter across all data rows
+      const hasGroupCol = Boolean(refined && refined.groupColumn);
+      const effectiveDataStart = (refined && refined.dataStartRow != null) ? refined.dataStartRow : dataStartRow;
 
-      for (let r = dataStartRow; r < grid.length; r++) {
-        // Exclude specific rows (e.g. folded label row)
+      for (let r = effectiveDataStart; r < grid.length; r++) {
+        // Exclude specific rows (e.g. folded label row or deleted title row)
         if (options && options.excludeRows && options.excludeRows.includes(r)) {
           continue;
         }
+        if (refined && refined.excludeRows && refined.excludeRows.includes(r)) {
+          continue;
+        }
+        const foldedLabel = options && options.foldedLabel ? options.foldedLabel : null;
         if (foldedLabel && r === foldedLabel.labelRow) {
           continue;
         }
 
         const row = grid[r];
         const csvCells = [];
+
+        // If Group column is present (Rule R1 Option G1), prepend group value
+        if (hasGroupCol) {
+          csvCells.push(this._escapeCell(refined.groupColumn));
+          provenance.push({
+            csvRow: csvRowIndex,
+            csvCol: 0,
+            sourceFileHash: fileHash,
+            sourcePart: sourcePart,
+            sourceTableIndex: tableIndex,
+            sourceRowIndex: 0,
+            sourceCellIndex: 0,
+            rawText: refined.groupColumn,
+            headerLabel: 'Group',
+            isHeader: false,
+            rule: refined.rule,
+            sourceCells: [{
+              tableIndex,
+              rowIndex: 0,
+              cellIndex: 0,
+              rawText: refined.groupColumn
+            }],
+            foldedFrom: null,
+            placeholder: null
+          });
+        }
 
         for (let c = 0; c < colCount; c++) {
           const cell = (row && row[c]) ? row[c] : null;
@@ -274,16 +336,17 @@
           const sourceCell = cell && cell.provenance ? cell.provenance.cellIndex : c;
 
           const isPlc = Boolean(cell && (cell.isPlaceholder || (cell.provenance && cell.provenance.placeholder)));
+          const targetCsvCol = c + (hasGroupCol ? 1 : 0);
           provenance.push({
             csvRow: csvRowIndex,
-            csvCol: c,
+            csvCol: targetCsvCol,
             sourceFileHash: fileHash,
             sourcePart: sourcePart,
             sourceTableIndex: tableIndex,
             sourceRowIndex: sourceRow,
             sourceCellIndex: sourceCell,
             rawText: rawText,
-            headerLabel: headers[c] || ('Column_' + (c + 1)),
+            headerLabel: headers[targetCsvCol] || ('Column_' + (targetCsvCol + 1)),
             isHeader: false,
             foldedFrom: null,
             placeholder: isPlc ? 'placeholder shown' : null

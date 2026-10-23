@@ -272,6 +272,9 @@ const CsvExporter = global.CsvExporter || window.CsvExporter;
 require('../prototype/js/auto-header-v3.js');
 const AutoHeaderV3 = global.AutoHeaderV3 || window.AutoHeaderV3;
 
+require('../prototype/js/table-refiner.js');
+const TableRefiner = global.TableRefiner || window.TableRefiner;
+
 const NATIVE_WORD_PATH = 'C:\\CodeC\\Doc to Table\\Native Word.docx';
 
 // ─── Test Runner ───
@@ -476,8 +479,222 @@ function getCellTextMinimal(tc) {
   const pHeader0 = provenance.find(p => p.isHeader && p.csvCol === 0);
   assert(pHeader0 && pHeader0.placeholder === 'placeholder shown', 'CSV companion provenance for Table #3 header cell carries placeholder: "placeholder shown"');
 
+  // ─── Target 4: Rule R1 (Title Row) ───
+  console.log('\n[Target 4: Rule R1 — Title Row Refinement]');
+  // Table #11: Title over value columns appended to first header with " | "
+  const t11 = res.tables[10];
+  const sugg11 = AutoHeaderV3.suggest(t11);
+  const refined11 = TableRefiner.refine(t11, sugg11.headerRowCount, sugg11.dataStartRow, sugg11.foldedLabel);
+  assert(refined11.rule === 'R1', `Table #11 triggers Rule R1 (actual: ${refined11.rule})`);
+  assert(refined11.headerRowCount === 1, 'Table #11 produces exactly 1 header row');
+  assert(refined11.headers[0] === 'Run Size | Branch Size', `Table #11 cell 0 is "Run Size | Branch Size" (actual: "${refined11.headers[0]}")`);
+  assert(refined11.headers[1] === '15', `Table #11 cell 1 is "15" (actual: "${refined11.headers[1]}")`);
+  assert(refined11.headers[20] === '1200', `Table #11 cell 20 is "1200" (actual: "${refined11.headers[20]}")`);
+  assert(refined11.headers.length === 21, `Table #11 has 21 header columns (actual: ${refined11.headers.length})`);
+  assert(refined11.excludeRows.includes(0), 'Table #11 deletes row 0');
+
+  // Tables #33, #35, #37, #39, #41: Group column + Title over values appended to cell 1
+  const groupExpected = [
+    { id: 33, idx: 32, group: 'Pipes' },
+    { id: 35, idx: 34, group: 'Flanges' },
+    { id: 37, idx: 36, group: 'Fittings' },
+    { id: 39, idx: 38, group: 'Valves' },
+    { id: 41, idx: 40, group: 'Miscellaneous' }
+  ];
+
+  for (const exp of groupExpected) {
+    const tbl = res.tables[exp.idx];
+    const sugg = AutoHeaderV3.suggest(tbl);
+    const refined = TableRefiner.refine(tbl, sugg.headerRowCount, sugg.dataStartRow, sugg.foldedLabel);
+
+    assert(refined.rule === 'R1', `Table #${exp.id} triggers Rule R1 (actual: ${refined.rule})`);
+    assert(refined.headerRowCount === 1, `Table #${exp.id} produces exactly 1 header row`);
+    assert(refined.headers[0] === 'Group', `Table #${exp.id} header col 0 is "Group"`);
+    assert(refined.headers[1] === 'Item Description | Nominal Diameter (DN)',
+      `Table #${exp.id} header col 1 is "Item Description | Nominal Diameter (DN)" (actual: "${refined.headers[1]}")`);
+    assert(refined.headers[2] === 'MESC', `Table #${exp.id} header col 2 is "MESC"`);
+    assert(refined.headers[3] === '15', `Table #${exp.id} header col 3 is "15"`);
+    assert(refined.headers[22] === '1200', `Table #${exp.id} header col 22 is "1200"`);
+    assert(refined.groupColumn === exp.group, `Table #${exp.id} groupColumn is "${exp.group}" (actual: "${refined.groupColumn}")`);
+    assert(refined.excludeRows.includes(0), `Table #${exp.id} deletes row 0`);
+  }
+
+  // ─── Target 5: Rule R2 (Two Ordinary Header Rows) ───
+  console.log('\n[Target 5: Rule R2 — Two Ordinary Header Rows]');
+  // Table #44: Run (DN), x, Branch (DN), (empty), CIWB, RECB, REEB, TERB
+  const sugg44 = AutoHeaderV3.suggest(t44);
+  const refined44 = TableRefiner.refine(t44, sugg44.headerRowCount, sugg44.dataStartRow, sugg44.foldedLabel);
+  assert(refined44.rule === 'R2', `Table #44 triggers Rule R2 (actual: ${refined44.rule})`);
+  assert(refined44.headerRowCount === 1, 'Table #44 produces exactly 1 header row');
+  assert(refined44.headers[0] === 'Run (DN)', `Table #44 header 0 is "Run (DN)" (actual: "${refined44.headers[0]}")`);
+  assert(refined44.headers[1] === 'x', `Table #44 header 1 is "x" (actual: "${refined44.headers[1]}")`);
+  assert(refined44.headers[2] === 'Branch (DN)', `Table #44 header 2 is "Branch (DN)" (actual: "${refined44.headers[2]}")`);
+  assert(refined44.headers[3] === '', `Table #44 header 3 is empty string (actual: "${refined44.headers[3]}")`);
+  assert(refined44.headers[4] === 'CIWB', `Table #44 header 4 is "CIWB" (actual: "${refined44.headers[4]}")`);
+  assert(refined44.headers[5] === 'RECB', `Table #44 header 5 is "RECB" (actual: "${refined44.headers[5]}")`);
+  assert(refined44.headers[6] === 'REEB', `Table #44 header 6 is "REEB" (actual: "${refined44.headers[6]}")`);
+  assert(refined44.headers[7] === 'TERB', `Table #44 header 7 is "TERB" (actual: "${refined44.headers[7]}")`);
+  assert(refined44.excludeRows.includes(1), 'Table #44 deletes row 1 (second row)');
+
+  // Table #52: Branch (DN), Run min. (DN), -, Run max. (DN), (empty), BNLF, BN3P, BRSB, BROB
+  const t52 = res.tables[51];
+  const sugg52 = AutoHeaderV3.suggest(t52);
+  const refined52 = TableRefiner.refine(t52, sugg52.headerRowCount, sugg52.dataStartRow, sugg52.foldedLabel);
+  assert(refined52.rule === 'R2', `Table #52 triggers Rule R2 (actual: ${refined52.rule})`);
+  assert(refined52.headerRowCount === 1, 'Table #52 produces exactly 1 header row');
+  assert(refined52.headers[0] === 'Branch (DN)', `Table #52 header 0 is "Branch (DN)" (actual: "${refined52.headers[0]}")`);
+  assert(refined52.headers[1] === 'Run min. (DN)', `Table #52 header 1 is "Run min. (DN)" (actual: "${refined52.headers[1]}")`);
+  assert(refined52.headers[2] === '-', `Table #52 header 2 is "-" (actual: "${refined52.headers[2]}")`);
+  assert(refined52.headers[3] === 'Run max. (DN)', `Table #52 header 3 is "Run max. (DN)" (actual: "${refined52.headers[3]}")`);
+  assert(refined52.headers[4] === '', `Table #52 header 4 is empty string (actual: "${refined52.headers[4]}")`);
+  assert(refined52.headers[5] === 'BNLF', `Table #52 header 5 is "BNLF" (actual: "${refined52.headers[5]}")`);
+  assert(refined52.headers[6] === 'BN3P', `Table #52 header 6 is "BN3P" (actual: "${refined52.headers[6]}")`);
+  assert(refined52.headers[7] === 'BRSB', `Table #52 header 7 is "BRSB" (actual: "${refined52.headers[7]}")`);
+  assert(refined52.headers[8] === 'BROB', `Table #52 header 8 is "BROB" (actual: "${refined52.headers[8]}")`);
+  assert(refined52.excludeRows.includes(1), 'Table #52 deletes row 1');
+
+  // ─── Target 6: Rule R3 (Label Folded by Auto) ───
+  console.log('\n[Target 6: Rule R3 — Folded Label Appended]');
+  // Table #3: Temperature °C | Pressure bar(g), -101, 0, 50, 75, 100, 125, 150
+  const sugg3 = AutoHeaderV3.suggest(t3);
+  const refined3 = TableRefiner.refine(t3, sugg3.headerRowCount, sugg3.dataStartRow, sugg3.foldedLabel);
+  assert(refined3.rule === 'R3', `Table #3 triggers Rule R3 (actual: ${refined3.rule})`);
+  assert(refined3.headerRowCount === 1, 'Table #3 produces exactly 1 header row');
+  assert(refined3.headers[0] === 'Temperature °C | Pressure bar(g)',
+    `Table #3 header 0 is "Temperature °C | Pressure bar(g)" (actual: "${refined3.headers[0]}")`);
+  assert(refined3.headers[1] === '-101', `Table #3 header 1 is "-101"`);
+  assert(refined3.headers[2] === '0', `Table #3 header 2 is "0"`);
+  assert(refined3.headers[3] === '50', `Table #3 header 3 is "50"`);
+  assert(refined3.headers[4] === '75', `Table #3 header 4 is "75"`);
+  assert(refined3.headers[5] === '100', `Table #3 header 5 is "100"`);
+  assert(refined3.headers[6] === '125', `Table #3 header 6 is "125"`);
+  assert(refined3.headers[7] === '150', `Table #3 header 7 is "150"`);
+  assert(refined3.excludeRows.includes(1), 'Table #3 excludes label row 1 from data');
+
+  // ─── Target 7: Rule R4 (No Header or Single Header without Label) ───
+  console.log('\n[Target 7: Rule R4 — Nothing to Refine]');
+  // Table #14: 1 header row, no label -> unchanged
+  const t14 = res.tables[13];
+  const sugg14 = AutoHeaderV3.suggest(t14);
+  const refined14 = TableRefiner.refine(t14, sugg14.headerRowCount, sugg14.dataStartRow, sugg14.foldedLabel);
+  assert(refined14.rule === 'R4', `Table #14 triggers Rule R4 (actual: ${refined14.rule})`);
+  assert(refined14.headerRowCount === 1, 'Table #14 retains 1 header row');
+  assert(refined14.headers[0] === 'Stainl steel AISI 316 Sour', `Table #14 header 0 is unchanged`);
+  assert(refined14.headers[2] === 'Plant', `Table #14 header 2 is unchanged`);
+
+  // Table #5: 0 header rows -> unchanged
+  const t5 = res.tables[4];
+  const sugg5 = AutoHeaderV3.suggest(t5);
+  const refined5 = TableRefiner.refine(t5, sugg5.headerRowCount, sugg5.dataStartRow, sugg5.foldedLabel);
+  assert(refined5.rule === 'R4', `Table #5 triggers Rule R4 (actual: ${refined5.rule})`);
+  assert(refined5.headerRowCount === 0, 'Table #5 retains 0 header rows');
+  assert(refined5.headers[0] === 'Column_1', 'Table #5 retains synthetic headers');
+
+  // Verify all 40 no-header tables trigger R4
+  let r4Count = 0;
+  for (const t of dataFiltered) {
+    const sugg = AutoHeaderV3.suggest(t);
+    const ref = TableRefiner.refine(t, sugg.headerRowCount, sugg.dataStartRow, sugg.foldedLabel);
+    if (ref.rule === 'R4') r4Count++;
+  }
+  assert(r4Count === 41, `Exactly 41 of 50 tables trigger Rule R4 (#14 + 40 no-header tables, actual: ${r4Count})`);
+
+  // ─── Target 8: Provenance Traceability ───
+  console.log('\n[Target 8: Provenance Traceability for Refined Cells]');
+  // Table #11 cell 0 provenance: source cells include Row 1 Cell 0 and Row 0 Cell 1
+  const p11_0 = refined11.headerProvenance[0];
+  assert(p11_0 && p11_0.sourceCells.length === 2, 'Table #11 cell 0 provenance records exactly 2 source cells');
+  assert(p11_0.sourceCells.some(sc => sc.rowIndex === 1 && sc.cellIndex === 0 && sc.rawText === 'Run Size'),
+    'Table #11 cell 0 provenance points to Row 1 Cell 0 ("Run Size")');
+  assert(p11_0.sourceCells.some(sc => sc.rowIndex === 0 && sc.cellIndex === 1 && sc.rawText === 'Branch Size'),
+    'Table #11 cell 0 provenance points to Row 0 Cell 1 ("Branch Size")');
+
+  // Table #33 cell 0 ("Group") and cell 1 provenance
+  const sugg33 = AutoHeaderV3.suggest(t33);
+  const refined33 = TableRefiner.refine(t33, sugg33.headerRowCount, sugg33.dataStartRow, sugg33.foldedLabel);
+  const p33_grp = refined33.headerProvenance[0];
+  assert(p33_grp && p33_grp.sourceCells.some(sc => sc.rowIndex === 0 && sc.cellIndex === 0 && sc.rawText === 'Pipes'),
+    'Table #33 "Group" provenance points to Row 0 Cell 0 ("Pipes")');
+  const p33_title = refined33.headerProvenance[1];
+  assert(p33_title && p33_title.sourceCells.some(sc => sc.rowIndex === 1 && sc.cellIndex === 0 && sc.rawText === 'Item Description'),
+    'Table #33 col 1 provenance points to Row 1 Cell 0 ("Item Description")');
+  assert(p33_title && p33_title.sourceCells.some(sc => sc.rowIndex === 0 && sc.cellIndex === 1 && sc.rawText === 'Nominal Diameter (DN)'),
+    'Table #33 col 1 provenance points to Row 0 Cell 1 ("Nominal Diameter (DN)")');
+
+  // Table #44 cell 0 provenance
+  const p44_0 = refined44.headerProvenance[0];
+  assert(p44_0 && p44_0.sourceCells.length === 2, 'Table #44 cell 0 provenance records 2 source cells');
+  assert(p44_0.sourceCells.some(sc => sc.rowIndex === 0 && sc.cellIndex === 0 && sc.rawText === 'Run'),
+    'Table #44 cell 0 provenance points to Row 0 Cell 0 ("Run")');
+  assert(p44_0.sourceCells.some(sc => sc.rowIndex === 1 && sc.cellIndex === 0 && sc.rawText === '(DN)'),
+    'Table #44 cell 0 provenance points to Row 1 Cell 0 ("(DN)")');
+
+  // Table #3 cell 0 provenance
+  const p3_0 = refined3.headerProvenance[0];
+  assert(p3_0 && p3_0.sourceCells.length === 2, 'Table #3 cell 0 provenance records 2 source cells');
+  assert(p3_0.sourceCells.some(sc => sc.rowIndex === 0 && sc.cellIndex === 0 && sc.rawText === 'Temperature °C'),
+    'Table #3 cell 0 provenance points to Row 0 Cell 0 ("Temperature °C")');
+  assert(p3_0.sourceCells.some(sc => sc.rowIndex === 1 && sc.cellIndex === 0 && sc.rawText === 'Pressure bar(g)'),
+    'Table #3 cell 0 provenance points to Row 1 Cell 0 ("Pressure bar(g)")');
+
+  // ─── Target 9: CSV Export with Refined Header and Group Column ───
+  console.log('\n[Target 9: CSV Export with Refined Header and Group Column]');
+  // Table #33 CSV export
+  const exp33 = exporter.exportTable(t33, 1, 2, { refined: refined33 });
+  const lines33 = exp33.csv.split('\r\n');
+  assert(lines33[0] === 'Group,Item Description | Nominal Diameter (DN),MESC,15,20,25,40,50,80,100,150,200,250,300,350,400,450,500,600,750,900,1050,1200',
+    `Table #33 CSV header line matches expected format`);
+  assert(lines33.length - 1 === 6, `Table #33 CSV has exactly 6 data rows (actual: ${lines33.length - 1})`);
+  assert(lines33[1].startsWith('Pipes,'), `Table #33 first CSV data line starts with "Pipes," (line: "${lines33[1].substring(0, 20)}...")`);
+  assert(lines33[6].startsWith('Pipes,'), `Table #33 last CSV data line starts with "Pipes," (line: "${lines33[6].substring(0, 20)}...")`);
+
+  // Table #11 CSV export
+  const exp11 = exporter.exportTable(t11, 1, 2, { refined: refined11 });
+  const lines11 = exp11.csv.split('\r\n');
+  assert(lines11[0].startsWith('Run Size | Branch Size,15,20,'), `Table #11 CSV header line starts with "Run Size | Branch Size,15,20,"`);
+  assert(lines11.length - 1 === 20, `Table #11 CSV has exactly 20 data rows (actual: ${lines11.length - 1})`);
+
+  // Table #44 CSV export
+  const exp44 = exporter.exportTable(t44, 1, 2, { refined: refined44 });
+  const lines44 = exp44.csv.split('\r\n');
+  assert(lines44[0] === 'Run (DN),x,Branch (DN),,CIWB,RECB,REEB,TERB', `Table #44 CSV header line matches expected`);
+  assert(lines44.length - 1 === 75, `Table #44 CSV has exactly 75 data rows (actual: ${lines44.length - 1})`);
+
+  // Table #52 CSV export
+  const exp52 = exporter.exportTable(t52, 1, 2, { refined: refined52 });
+  const lines52 = exp52.csv.split('\r\n');
+  assert(lines52[0] === 'Branch (DN),Run min. (DN),-,Run max. (DN),,BNLF,BN3P,BRSB,BROB', `Table #52 CSV header line matches expected`);
+  assert(lines52.length - 1 === 60, `Table #52 CSV has exactly 60 data rows (actual: ${lines52.length - 1})`);
+
+  // Table #3 CSV export
+  const exp3 = exporter.exportTable(t3, 1, 2, { refined: refined3 });
+  const lines3 = exp3.csv.split('\r\n');
+  assert(lines3[0] === 'Temperature °C | Pressure bar(g),-101,0,50,75,100,125,150', `Table #3 CSV header line matches expected`);
+  assert(lines3.length - 1 === 1, `Table #3 CSV has exactly 1 data row (actual: ${lines3.length - 1})`);
+
+  // Exhaustive provenance companion records in refined CSV
+  assert(exp33.provenance.length === (1 + 6) * 23, `Table #33 has 1 provenance record per CSV cell (${exp33.provenance.length})`);
+  assert(exp11.provenance.length === (1 + 20) * 21, `Table #11 has 1 provenance record per CSV cell (${exp11.provenance.length})`);
+  assert(exp44.provenance.length === (1 + 75) * 8, `Table #44 has 1 provenance record per CSV cell (${exp44.provenance.length})`);
+
+  // ─── Target 10: Undo & Reversibility ───
+  console.log('\n[Target 10: Undo & Reversibility]');
+  // Simulating state save and undo
+  const savedState = {
+    headerRowCount: sugg11.headerRowCount,
+    dataStartRow: sugg11.dataStartRow,
+    foldedLabel: sugg11.foldedLabel
+  };
+  // Before undo: refined has headerRowCount 1
+  assert(refined11.headerRowCount === 1, 'Refined state has 1 header row');
+  // Undo restores savedState
+  const restoredHeaderCount = savedState.headerRowCount;
+  const restoredDataStart = savedState.dataStartRow;
+  assert(restoredHeaderCount === 2, 'Undo restores headerRowCount to 2');
+  assert(restoredDataStart === 2, 'Undo restores dataStartRow to 2');
+
   console.log('\n===============================================================');
-  console.log(`  Step 0 Test Summary: ${passed}/${passed + failed} tests passed (${failed} failed)`);
+  console.log(`  D2T-S1.2 Full Test Summary: ${passed}/${passed + failed} tests passed (${failed} failed)`);
   console.log('===============================================================\n');
 
   if (failed > 0) process.exit(1);

@@ -70,6 +70,8 @@
       <div class="table-controls" id="tableControls" style="display:none">
         <div class="control-group">
           <button class="btn btn-auto" id="btnAutoHeader" onclick="app.applyAutoHeader()" title="Apply automatic header/data suggestion (Auto v3)">⚡ Auto</button>
+          <button class="btn btn-refine" id="btnRefineTable" onclick="app.applyRefineTableForm()" title="Auto Refine table form to exactly one header row">✨ Auto Refine table form</button>
+          <button class="btn btn-undo-refine" id="btnUndoRefine" onclick="app.undoRefineTableForm()" style="display:none" title="Restore header before refinement">↩ Undo Refine</button>
         </div>
         <div class="control-group">
           <label for="headerRows">Header rows:</label>
@@ -85,6 +87,7 @@
         </div>
         <button class="btn btn-primary" id="btnDownloadCsv" onclick="app.downloadSelectedCsv()">⬇ Download CSV</button>
         <div class="auto-rule-badge" id="autoRuleBadge" style="display:none"></div>
+        <div class="refine-rule-badge" id="refineRuleBadge" style="display:none"></div>
         <div style="margin-left:auto; font-size:0.78rem; color:var(--text-muted)" id="tableTitle"></div>
       </div>
 
@@ -123,6 +126,7 @@
   <script src="js/jszip.min.js"></script>
   <script src="js/docx-table-parser.js"></script>
   <script src="js/auto-header-v3.js"></script>
+  <script src="js/table-refiner.js"></script>
   <script src="js/csv-exporter.js"></script>
   <script src="js/app.js"></script>
 

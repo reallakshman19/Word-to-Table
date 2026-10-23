@@ -226,6 +226,33 @@ body {
   color: var(--bg);
 }
 
+.btn-refine {
+  background: rgba(187, 154, 247, 0.2);
+  color: #bb9af7;
+  border-color: #bb9af7;
+  font-weight: 600;
+  padding: 5px 12px;
+}
+
+.btn-refine:hover {
+  background: #bb9af7;
+  color: var(--bg);
+}
+
+.btn-undo-refine {
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border-color: var(--border);
+  font-size: 0.78rem;
+  padding: 5px 10px;
+}
+
+.btn-undo-refine:hover {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
 .auto-rule-badge {
   font-size: 0.75rem;
   padding: 4px 10px;
@@ -233,6 +260,21 @@ body {
   background: rgba(122, 162, 247, 0.12);
   border: 1px solid var(--accent-dim);
   color: var(--text-bright);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 480px;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.refine-rule-badge {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  background: rgba(187, 154, 247, 0.12);
+  border: 1px solid rgba(187, 154, 247, 0.4);
+  color: #bb9af7;
   display: inline-flex;
   align-items: center;
   gap: 6px;
