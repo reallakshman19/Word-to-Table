@@ -553,7 +553,7 @@
       const t = filteredTables[i];
       try {
         // Select table (updates selector, card, etc.)
-        selectTable(t.physicalIndex);
+        selectTableByPhysicalIndex(t.physicalIndex);
 
         // Run real Auto handler
         applyAutoHeader();
