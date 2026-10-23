@@ -203,7 +203,7 @@
         while (currentEl) {
           const parent = currentEl.parentNode;
           if (!parent) break;
-          const sibs = parent.children;
+          const sibs = Array.from(parent.children); // HTMLCollection in the browser has no indexOf
           const idx = sibs.indexOf(currentEl);
           if (idx === -1) break;
 
