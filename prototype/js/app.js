@@ -172,14 +172,42 @@
   // ─── Filter & Dropdown Selector ───
 
   /**
+   * Filter predicate for "Only Tables with data":
+   * >= 2 rows and >= 2 columns that contain text.
+   * Yields exactly 50 tables on Native Word.docx.
+   */
+  function isTableWithData(t) {
+    if (!t || t.rowCount < 2 || t.colCount < 2) return false;
+    let rowsWithText = 0;
+    for (let r = 0; r < t.rowCount; r++) {
+      if (t.grid[r] && t.grid[r].some(c => c && c.text && c.text.trim().length > 0)) {
+        rowsWithText++;
+      }
+    }
+    let colsWithText = 0;
+    for (let c = 0; c < t.colCount; c++) {
+      let colHasText = false;
+      for (let r = 0; r < t.rowCount; r++) {
+        const cell = t.grid[r] ? t.grid[r][c] : null;
+        if (cell && cell.text && cell.text.trim().length > 0) {
+          colHasText = true;
+          break;
+        }
+      }
+      if (colHasText) colsWithText++;
+    }
+    return rowsWithText >= 2 && colsWithText >= 2;
+  }
+
+  /**
    * Filter predicate:
-   * 'all'  -> all tables
-   * 'data' -> rowCount >= 2 AND colCount >= 2 (no content test)
+   * 'all'  -> all tables (140)
+   * 'data' -> >= 2 rows and >= 2 columns that contain text (50 tables)
    */
   function getFilteredTables() {
     if (!parseResult || !parseResult.tables) return [];
     if (filterMode === 'data') {
-      return parseResult.tables.filter(t => t.rowCount >= 2 && t.colCount >= 2);
+      return parseResult.tables.filter(isTableWithData);
     }
     return parseResult.tables;
   }
@@ -613,6 +641,7 @@
     applyAutoHeader,
     switchTab,
     downloadSelectedCsv,
+    isTableWithData,
   };
 
 })();

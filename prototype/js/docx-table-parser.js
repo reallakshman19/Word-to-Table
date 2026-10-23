@@ -324,7 +324,7 @@
       // but NOT inside nested tables.
       const hasImage = this._cellHasImage(cellEl);
 
-      // ── Placeholder detection (showPlcHdr) ─────────────────────────
+      // ── Placeholder detection (w:showingPlcHdr) ───────────────────
       const isPlaceholder = this._cellIsPlaceholder(cellEl);
 
       // ── Text extraction ────────────────────────────────────────────
@@ -360,6 +360,7 @@
           tableIndex,
           rowIndex,
           cellIndex,
+          placeholder: isPlaceholder ? 'placeholder shown' : null,
         },
       };
     }
@@ -453,28 +454,44 @@
     }
 
     /**
-     * Get w:r elements that are direct children of a w:p element.
-     * Also captures top-level w:hyperlink > w:r children.
+     * Get w:r elements within a w:p element.
+     * Recursively collects runs inside w:sdt > w:sdtContent, w:smartTag,
+     * w:customXml, w:ins, w:fldSimple, and w:hyperlink.
+     * Never descends into nested w:tbl elements and never collects w:delText / w:del.
      *
      * @param {Element} pEl — the w:p element
      * @returns {Element[]} — array of w:r elements
      */
     _getRunsInParagraph(pEl) {
       const runs = [];
-      for (const child of pEl.children) {
-        if (child.namespaceURI === WORD_NS) {
+      const collect = (node) => {
+        for (const child of node.children) {
+          // Never inside a nested w:tbl
+          if (child.localName === 'tbl') {
+            continue;
+          }
+          // Never inside w:del (deleted text revision)
+          if (child.localName === 'del') {
+            continue;
+          }
           if (child.localName === 'r') {
             runs.push(child);
-          } else if (child.localName === 'hyperlink') {
-            // Hyperlinks contain w:r children with the link text
-            for (const hChild of child.children) {
-              if (hChild.localName === 'r' && hChild.namespaceURI === WORD_NS) {
-                runs.push(hChild);
-              }
-            }
+          } else if (
+            child.localName === 'sdt' ||
+            child.localName === 'sdtContent' ||
+            child.localName === 'smartTag' ||
+            child.localName === 'customXml' ||
+            child.localName === 'ins' ||
+            child.localName === 'fldSimple' ||
+            child.localName === 'hyperlink' ||
+            child.localName === 'dir' ||
+            child.localName === 'bdo'
+          ) {
+            collect(child);
           }
         }
-      }
+      };
+      collect(pEl);
       return runs;
     }
 
@@ -664,19 +681,31 @@
     }
 
     /**
-     * Check if a cell has the showPlcHdr property (structured document tag placeholder).
+     * Check if a cell has the w:showingPlcHdr property (structured document tag placeholder).
      *
-     * The property is found at w:tc > w:p > w:pPr > w:rPr > ... or as
-     * a showPlcHdr attribute on sdt elements. We check for any descendant
-     * element named "showPlcHdr" within the cell.
+     * In OpenXML, structured document tags with placeholder text have
+     * <w:showingPlcHdr/> inside <w:sdtPr>.
+     * We check for any descendant element named "showingPlcHdr" within the cell,
+     * skipping any nested w:tbl elements.
      *
      * @param {Element} cellEl — the w:tc element
      * @returns {boolean}
      */
     _cellIsPlaceholder(cellEl) {
-      // Check for w:tcPr > w:showPlcHdr or sdt > sdtPr > showPlcHdr
-      const found = cellEl.getElementsByTagNameNS(WORD_NS, 'showPlcHdr');
-      return found.length > 0;
+      let found = false;
+      const walk = (node) => {
+        if (found) return;
+        for (const child of node.children) {
+          if (child.localName === 'tbl') continue;
+          if (child.localName === 'showingPlcHdr') {
+            found = true;
+            return;
+          }
+          walk(child);
+        }
+      };
+      walk(cellEl);
+      return found;
     }
 
     /**

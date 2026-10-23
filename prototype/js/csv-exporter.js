@@ -224,6 +224,7 @@
           rawText: foldedLabel.text,
         } : null;
 
+        const isPlc = Boolean(headerCell && (headerCell.isPlaceholder || (headerCell.provenance && headerCell.provenance.placeholder)));
         provenance.push({
           csvRow: csvRowIndex,
           csvCol: c,
@@ -235,7 +236,8 @@
           rawText: headers[c],
           headerLabel: headers[c],
           isHeader: true,
-          foldedFrom: foldedFrom
+          foldedFrom: foldedFrom,
+          placeholder: isPlc ? 'placeholder shown' : null
         });
       }
       csvRowIndex++;
@@ -271,6 +273,7 @@
           const sourceRow = cell && cell.provenance ? cell.provenance.rowIndex : r;
           const sourceCell = cell && cell.provenance ? cell.provenance.cellIndex : c;
 
+          const isPlc = Boolean(cell && (cell.isPlaceholder || (cell.provenance && cell.provenance.placeholder)));
           provenance.push({
             csvRow: csvRowIndex,
             csvCol: c,
@@ -282,7 +285,8 @@
             rawText: rawText,
             headerLabel: headers[c] || ('Column_' + (c + 1)),
             isHeader: false,
-            foldedFrom: null
+            foldedFrom: null,
+            placeholder: isPlc ? 'placeholder shown' : null
           });
         }
 
