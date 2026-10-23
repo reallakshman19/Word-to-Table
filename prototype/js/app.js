@@ -26,6 +26,8 @@
   let autoRuleFired = null;          // Last suggestion from AutoHeaderV3
   let currentRefined = null;         // TableRefiner result
   let preRefineState = null;         // Saved state before refinement for Undo
+  let currentRecovered = null;       // HeaderRecovery result
+  let preRecoverState = null;        // Saved state before recovery for Undo
 
   // ─── DOM refs ───
   const $ = id => document.getElementById(id);
@@ -54,6 +56,10 @@
   const btnRefineTable = $('btnRefineTable');
   const btnUndoRefine = $('btnUndoRefine');
   const refineRuleBadge = $('refineRuleBadge');
+  const btnRecoverHeader = $('btnRecoverHeader');
+  const btnUndoRecover = $('btnUndoRecover');
+  const recoverRuleBadge = $('recoverRuleBadge');
+  const titlePathBar = $('titlePathBar');
   const btnDownloadCsv = $('btnDownloadCsv');
 
   // ─── File Input / Drag & Drop ───
@@ -102,6 +108,12 @@
       if (refineRuleBadge) refineRuleBadge.style.display = 'none';
       if (btnUndoRefine) btnUndoRefine.style.display = 'none';
     }
+    if (currentRecovered) {
+      currentRecovered = null;
+      preRecoverState = null;
+      if (recoverRuleBadge) recoverRuleBadge.style.display = 'none';
+      if (btnUndoRecover) btnUndoRecover.style.display = 'none';
+    }
     if (autoRuleFired) {
       autoRuleBadge.textContent = autoRuleFired.ruleName + ' (manually edited)';
     }
@@ -114,6 +126,12 @@
       preRefineState = null;
       if (refineRuleBadge) refineRuleBadge.style.display = 'none';
       if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+    }
+    if (currentRecovered) {
+      currentRecovered = null;
+      preRecoverState = null;
+      if (recoverRuleBadge) recoverRuleBadge.style.display = 'none';
+      if (btnUndoRecover) btnUndoRecover.style.display = 'none';
     }
     if (autoRuleFired) {
       autoRuleBadge.textContent = autoRuleFired.ruleName + ' (manually edited)';
@@ -150,6 +168,8 @@
       // Parse using DocxTableParser
       const parser = new window.DocxTableParser();
       parseResult = await parser.parse(buffer, fileHash);
+
+      computeDocumentTitlePaths();
 
       // Reset state
       selectedPhysicalIndex = -1;
@@ -278,7 +298,8 @@
       const prefix = isNested ? `↳ #${t.physicalIndex} (Nested in #${t.parentTableIndex})` : `#${t.physicalIndex} Table ${t.bodyIndex}`;
       const dim = `${t.rowCount}×${t.colCount}`;
       const spanFlag = t.hasSpans ? ' [spans]' : '';
-      html += `<option value="${t.physicalIndex}">${esc(prefix)} — ${dim}${spanFlag}</option>`;
+      const usedFlag = t.usedAsHeaderOf ? ` [used as header of #${t.usedAsHeaderOf}]` : '';
+      html += `<option value="${t.physicalIndex}">${esc(prefix)} — ${dim}${spanFlag}${usedFlag}</option>`;
     }
 
     tableSelect.innerHTML = html;
@@ -310,9 +331,13 @@
     autoRuleFired = null;
     currentRefined = null;
     preRefineState = null;
+    currentRecovered = null;
+    preRecoverState = null;
     autoRuleBadge.style.display = 'none';
     if (refineRuleBadge) refineRuleBadge.style.display = 'none';
     if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+    if (recoverRuleBadge) recoverRuleBadge.style.display = 'none';
+    if (btnUndoRecover) btnUndoRecover.style.display = 'none';
 
     // Show controls
     tableControls.style.display = '';
@@ -349,9 +374,13 @@
     autoRuleFired = null;
     currentRefined = null;
     preRefineState = null;
+    currentRecovered = null;
+    preRecoverState = null;
     autoRuleBadge.style.display = 'none';
     if (refineRuleBadge) refineRuleBadge.style.display = 'none';
     if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+    if (recoverRuleBadge) recoverRuleBadge.style.display = 'none';
+    if (btnUndoRecover) btnUndoRecover.style.display = 'none';
 
     tableControls.style.display = 'none';
     contentTabs.style.display = 'none';
@@ -387,11 +416,15 @@
     const t = parseResult.tables.find(x => x.physicalIndex === selectedPhysicalIndex);
     if (!t) return;
 
-    // Reset refine state when re-running Auto
+    // Reset refine and recover state when re-running Auto
     currentRefined = null;
     preRefineState = null;
+    currentRecovered = null;
+    preRecoverState = null;
     if (refineRuleBadge) refineRuleBadge.style.display = 'none';
     if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+    if (recoverRuleBadge) recoverRuleBadge.style.display = 'none';
+    if (btnUndoRecover) btnUndoRecover.style.display = 'none';
 
     // Call AutoHeaderV3 heuristic (pure, idempotent)
     const suggestion = window.AutoHeaderV3.suggest(t);
@@ -512,6 +545,104 @@
     renderSelectedTable();
   }
 
+  // ─── Header Recovery (D2T-S1.3) ───
+
+  function applyRecoverHeader() {
+    if (selectedPhysicalIndex <= 0 || !parseResult) return;
+    const t = getActiveTable();
+    if (!t) return;
+
+    if (currentRecovered) {
+      if (recoverRuleBadge) {
+        recoverRuleBadge.style.display = '';
+        const prev = recoverRuleBadge.innerHTML;
+        if (!prev.includes('already recovered')) {
+          recoverRuleBadge.innerHTML = prev + ' <span class="badge-already-recovered">(already recovered)</span>';
+        }
+      }
+      return;
+    }
+
+    const hr = parseInt(headerRowsSelect.value, 10);
+    // Applies ONLY to a table T with no header rows (Auto Rule 4, or 0 header rows after manual change)
+    // Never touches a table that already has header rows
+    if (hr > 0 || (currentRefined && currentRefined.headerRowCount > 0)) {
+      if (recoverRuleBadge) {
+        recoverRuleBadge.style.display = '';
+        recoverRuleBadge.className = 'recover-rule-badge';
+        recoverRuleBadge.innerHTML = 'ℹ Table already has header rows (not applicable)';
+      }
+      return;
+    }
+
+    preRecoverState = {
+      headerRowCount: hr,
+      dataStartRow: Math.max(parseInt(dataStartInput.value, 10) || 0, 0),
+      currentRefined: currentRefined,
+      currentFoldedLabel: currentFoldedLabel ? Object.assign({}, currentFoldedLabel) : null,
+      autoRuleFired: autoRuleFired ? Object.assign({}, autoRuleFired) : null,
+    };
+
+    const isData = new Set(parseResult.tables.filter(isTableWithData).map(x => x.physicalIndex));
+    const recResult = window.HeaderRecovery.recover(t, parseResult.tables, isData, hr);
+
+    if (!recResult.success) {
+      if (recoverRuleBadge) {
+        recoverRuleBadge.style.display = '';
+        recoverRuleBadge.className = 'recover-rule-badge';
+        recoverRuleBadge.innerHTML = `⚠ ${esc(recResult.message)}`;
+      }
+      return;
+    }
+
+    currentRecovered = recResult;
+    headerRowsSelect.value = '1';
+    dataStartInput.value = '0';
+
+    if (recoverRuleBadge) {
+      recoverRuleBadge.style.display = '';
+      recoverRuleBadge.className = 'recover-rule-badge';
+      recoverRuleBadge.innerHTML = `📥 <strong>[Recovered]</strong> from #${recResult.sourcePhysicalIndex} row 0 (${esc(recResult.signals.join(', '))}) <span class="recovered-hint">(Undo to restore)</span>`;
+    }
+    if (btnUndoRecover) {
+      btnUndoRecover.style.display = '';
+    }
+
+    populateTableDropdown();
+    renderSelectedTable();
+  }
+
+  function undoRecoverHeader() {
+    if (!preRecoverState) return;
+    const t = getActiveTable();
+    if (currentRecovered && t) {
+      const H = parseResult.tables.find(x => x.physicalIndex === currentRecovered.sourcePhysicalIndex);
+      if (H && H.usedAsHeaderOf === t.physicalIndex) {
+        delete H.usedAsHeaderOf;
+      }
+    }
+
+    headerRowsSelect.value = String(preRecoverState.headerRowCount);
+    dataStartInput.value = String(preRecoverState.dataStartRow);
+    currentRefined = preRecoverState.currentRefined;
+    currentFoldedLabel = preRecoverState.currentFoldedLabel;
+    autoRuleFired = preRecoverState.autoRuleFired;
+
+    currentRecovered = null;
+    preRecoverState = null;
+
+    if (recoverRuleBadge) {
+      recoverRuleBadge.style.display = 'none';
+      recoverRuleBadge.innerHTML = '';
+    }
+    if (btnUndoRecover) {
+      btnUndoRecover.style.display = 'none';
+    }
+
+    populateTableDropdown();
+    renderSelectedTable();
+  }
+
   function navigateToSource(tableIndex, rowIndex, cellIndex) {
     const sourceTab = document.querySelector('.content-tab[data-panel="sourcePanel"]');
     if (sourceTab) {
@@ -525,6 +656,22 @@
     }
   }
 
+  function computeDocumentTitlePaths() {
+    if (!window.HeaderRecovery || !parseResult || !parseResult.tables) return;
+    const dataIndices = parseResult.tables.filter(isTableWithData).map(x => x.physicalIndex);
+    const isDataSet = new Set(dataIndices);
+    const recMap = new Map();
+    for (const t of parseResult.tables) {
+      if (isDataSet.has(t.physicalIndex)) {
+        const chk = window.HeaderRecovery.canRecover(t, parseResult.tables, isDataSet, 0);
+        if (chk.eligible && chk.H) {
+          recMap.set(t.physicalIndex, chk.H.physicalIndex);
+        }
+      }
+    }
+    window.HeaderRecovery.computeAllTitlePaths(parseResult.tables, dataIndices, recMap);
+  }
+
   // ─── Batch Run (D2T-S1.2 Batch B1) ───
 
   function runBatchProcess() {
@@ -532,6 +679,8 @@
       alert('Please load a .docx file before running the batch.');
       return;
     }
+
+    computeDocumentTitlePaths();
 
     // Filter tables using "Only Tables with data" predicate
     const filteredTables = parseResult.tables.filter(isTableWithData);
@@ -563,12 +712,17 @@
         applyRefineTableForm();
         const refRes = currentRefined;
 
+        // Run real Recover handler (Step 1)
+        applyRecoverHeader();
+        const recRes = currentRecovered;
+
         batchResults.push({
           table: t,
           status: 'OK',
           autoRule: autoSugg ? autoSugg.ruleName : 'Auto',
           refineRule: refRes ? (refRes.ruleName || refRes.rule) : 'Nothing to refine',
           refined: refRes,
+          recovered: recRes,
           error: null
         });
       } catch (err) {
@@ -630,6 +784,29 @@
     const t = getActiveTable();
     if (!t) return;
 
+    // Render Title Path Bar (Step 2)
+    if (titlePathBar && window.HeaderRecovery) {
+      const dataIndices = parseResult.tables.filter(isTableWithData).map(x => x.physicalIndex);
+      const recMap = new Map();
+      if (currentRecovered) recMap.set(t.physicalIndex, currentRecovered.sourcePhysicalIndex);
+      const allPaths = window.HeaderRecovery.computeAllTitlePaths(parseResult.tables, dataIndices, recMap);
+      const info = allPaths.get(t.physicalIndex);
+      if (info && info.path && info.path.length > 0) {
+        titlePathBar.style.display = 'flex';
+        let tHtml = '<strong>Title:</strong> ';
+        tHtml += info.path.map(p =>
+          `<a href="#t${p.tableIndex}" class="title-path-link" onclick="app.selectTableByPhysicalIndex(${p.tableIndex}); return false;" title="Source: #${p.tableIndex} row 0">#${p.tableIndex} row 0: ${esc(p.text)}</a>`
+        ).join(' &gt; ');
+        if (info.inherited) {
+          tHtml += ' <span class="badge-inherited">(inherited)</span>';
+        }
+        titlePathBar.innerHTML = tHtml;
+      } else {
+        titlePathBar.style.display = 'none';
+        titlePathBar.innerHTML = '';
+      }
+    }
+
     const headerRows = parseInt(headerRowsSelect.value, 10);
     const dataStart = Math.max(parseInt(dataStartInput.value, 10) || 0, 0);
 
@@ -645,6 +822,49 @@
     const grid = table.grid;
     if (!grid || grid.length === 0) {
       gridPanel.innerHTML = '<div class="notice notice-info">This table has no rows.</div>';
+      return;
+    }
+
+    // ─── Render Recovered Header Form (D2T-S1.3) ───
+    if (currentRecovered) {
+      const recHeaders = currentRecovered.headers;
+      let html = '<div class="grid-container"><table class="data-grid"><tbody>';
+      // Recovered Header row (single row)
+      html += '<tr class="header-row"><td class="row-idx">H</td>';
+      for (let c = 0; c < recHeaders.length; c++) {
+        const hp = (currentRecovered.headerProvenance && currentRecovered.headerProvenance[c]) || {};
+        const srcTitle = `Source: #${currentRecovered.sourcePhysicalIndex} Row 0 Cell ${c} (signals: ${currentRecovered.signals.join(', ')})`;
+        html += `<th class="recovered-header-cell" title="${esc(srcTitle)}"><strong>${esc(recHeaders[c])}</strong> <small>[recovered]</small></th>`;
+      }
+      html += '</tr>';
+
+      // Data rows: all rows of T
+      for (let r = 0; r < grid.length; r++) {
+        const row = grid[r];
+        html += `<tr><td class="row-idx" title="Source Row ${r}">${r}</td>`;
+        for (let c = 0; c < table.colCount; c++) {
+          const cell = row[c];
+          let content = '';
+          if (cell && cell.spanned) {
+            content = '<span class="spanned-cell">⬅ span</span>';
+          } else if (cell && cell.hasImage) {
+            content = '<span class="image-cell">🖼 [image]</span>';
+          } else if (cell && cell.hasNestedTable) {
+            content = `<span class="nested-cell">📋 [nested table ${cell.nestedTableIndex || ''}]</span>`;
+          } else {
+            content = esc(cell ? cell.text : '');
+          }
+          html += `<td title="Orig Row ${r}, Cell ${c}">${content}</td>`;
+        }
+        html += '</tr>';
+      }
+      html += '</tbody></table></div>';
+
+      const banner = `<div class="notice notice-info">` +
+        `<strong>Recovered Header:</strong> from #${currentRecovered.sourcePhysicalIndex} row 0 ` +
+        `(signals: ${esc(currentRecovered.signals.join(', '))}). Exactly 1 header row (${grid.length} data rows).</div>`;
+
+      gridPanel.innerHTML = banner + html;
       return;
     }
 
@@ -796,6 +1016,7 @@
     const options = {
       foldedLabel: currentFoldedLabel,
       refined: currentRefined,
+      recovered: currentRecovered,
     };
     const { csv } = exporter.exportTable(table, headerRows, dataStart, options);
 
@@ -814,6 +1035,7 @@
     const options = {
       foldedLabel: currentFoldedLabel,
       refined: currentRefined,
+      recovered: currentRecovered,
     };
     const { provenance } = exporter.exportTable(table, headerRows, dataStart, options);
 
@@ -828,7 +1050,9 @@
 
     for (const p of provenance) {
       let sourceInfo = '—';
-      if (p.sourceCells && p.sourceCells.length > 0) {
+      if (p.recovered) {
+        sourceInfo = `<span style="color:#2ac3de">#${p.sourceTableIndex} R${p.sourceRowIndex} C${p.sourceCellIndex} (signals: ${p.signals ? p.signals.join(', ') : ''})</span>`;
+      } else if (p.sourceCells && p.sourceCells.length > 0) {
         sourceInfo = p.sourceCells.map(sc => `<span style="color:var(--green)">R${sc.rowIndex} C${sc.cellIndex} ("${esc(sc.rawText)}")</span>`).join(' + ');
       } else if (p.foldedFrom) {
         sourceInfo = `<span style="color:var(--green)">R${p.foldedFrom.sourceRowIndex} C${p.foldedFrom.sourceCellIndex} ("${esc(p.foldedFrom.rawText)}")</span>`;
@@ -842,7 +1066,7 @@
         `<td>${esc(p.headerLabel)}</td>` +
         `<td class="mono">${esc(truncate(p.rawText, 50))}</td>` +
         `<td>${p.isHeader ? '✓' : ''}</td>` +
-        `<td>${p.rule ? `<span class="badge-sm">${esc(p.rule)}</span>` : '—'}</td>` +
+        `<td>${p.recovered ? '<span class="badge-sm" style="color:#2ac3de">Recovered</span>' : (p.rule ? `<span class="badge-sm">${esc(p.rule)}</span>` : '—')}</td>` +
         `<td>${sourceInfo}</td>` +
         `<td>${p.placeholder ? `<span class="badge-sm" style="color:var(--yellow)">${esc(p.placeholder)}</span>` : '—'}</td>` +
         `<td>#${p.sourceTableIndex}</td>` +
@@ -901,12 +1125,13 @@
     const options = {
       foldedLabel: currentFoldedLabel,
       refined: currentRefined,
+      recovered: currentRecovered,
     };
     const { csv } = exporter.exportTable(t, headerRows, dataStart, options);
 
     const safeName = (fileName || 'table').replace(/\.docx$/i, '');
-    const refineTag = currentRefined ? `_refined_${currentRefined.rule.toLowerCase()}` : `_h${headerRows}`;
-    const csvName = `${safeName}_table${t.physicalIndex}${refineTag}.csv`;
+    const recTag = currentRecovered ? '_recovered' : (currentRefined ? `_refined_${currentRefined.rule.toLowerCase()}` : `_h${headerRows}`);
+    const csvName = `${safeName}_table${t.physicalIndex}${recTag}.csv`;
     exporter.downloadCsv(csv, csvName);
   }
 
@@ -941,6 +1166,7 @@
   // ─── Public API ───
 
   window.app = {
+    handleFile,
     navigateToSource,
     runBatchProcess,
     onFilterChange,
@@ -949,7 +1175,11 @@
     applyAutoHeader,
     applyRefineTableForm,
     undoRefineTableForm,
-    navigateToSource,
+    applyRecoverHeader,
+    undoRecoverHeader,
+    getCurrentRecovered: () => currentRecovered,
+    getCurrentRefined: () => currentRefined,
+    getSelectedPhysicalIndex: () => selectedPhysicalIndex,
     switchTab,
     downloadSelectedCsv,
     isTableWithData,

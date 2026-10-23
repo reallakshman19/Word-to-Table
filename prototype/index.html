@@ -71,8 +71,10 @@
         <div class="control-group">
           <button class="btn btn-auto" id="btnAutoHeader" onclick="app.applyAutoHeader()" title="Apply automatic header/data suggestion (Auto v3)">⚡ Auto</button>
           <button class="btn btn-refine" id="btnRefineTable" onclick="app.applyRefineTableForm()" title="Auto Refine table form to exactly one header row">✨ Auto Refine table form</button>
-          <button class="btn btn-batch" id="btnBatchRun" onclick="app.runBatchProcess()" title="Batch run Auto + Refine on all filtered tables and export before/after HTML">⚡ Batch run</button>
+          <button class="btn btn-recover" id="btnRecoverHeader" onclick="app.applyRecoverHeader()" title="Recover missing header from preceding table">📥 Recover header</button>
+          <button class="btn btn-batch" id="btnBatchRun" onclick="app.runBatchProcess()" title="Batch run Auto + Refine + Recover on all filtered tables and export before/after HTML">⚡ Batch run</button>
           <button class="btn btn-undo-refine" id="btnUndoRefine" onclick="app.undoRefineTableForm()" style="display:none" title="Restore header before refinement">↩ Undo Refine</button>
+          <button class="btn btn-undo-recover" id="btnUndoRecover" onclick="app.undoRecoverHeader()" style="display:none" title="Restore header before recovery">↩ Undo Recover</button>
         </div>
         <div class="control-group">
           <label for="headerRows">Header rows:</label>
@@ -89,8 +91,12 @@
         <button class="btn btn-primary" id="btnDownloadCsv" onclick="app.downloadSelectedCsv()">⬇ Download CSV</button>
         <div class="auto-rule-badge" id="autoRuleBadge" style="display:none"></div>
         <div class="refine-rule-badge" id="refineRuleBadge" style="display:none"></div>
+        <div class="recover-rule-badge" id="recoverRuleBadge" style="display:none"></div>
         <div style="margin-left:auto; font-size:0.78rem; color:var(--text-muted)" id="tableTitle"></div>
       </div>
+
+      <!-- Title Path Bar (Step 2) -->
+      <div class="title-path-bar" id="titlePathBar" style="display:none"></div>
 
       <!-- Content Tabs -->
       <div class="content-tabs" id="contentTabs" style="display:none">
@@ -128,6 +134,7 @@
   <script src="js/docx-table-parser.js"></script>
   <script src="js/auto-header-v3.js"></script>
   <script src="js/table-refiner.js"></script>
+  <script src="js/header-recovery.js"></script>
   <script src="js/csv-exporter.js"></script>
   <script src="js/batch-exporter.js"></script>
   <script src="js/app.js"></script>

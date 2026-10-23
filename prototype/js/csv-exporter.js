@@ -162,19 +162,22 @@
       // Clamp headerRowCount to a sensible range
       headerRowCount = Math.max(0, Math.min(2, Number(headerRowCount) || 0));
 
-      // Default dataStartRow to headerRowCount
+      // Default dataStartRow to headerRowCount (or 0 for recovered headers)
       if (dataStartRow == null || dataStartRow === undefined) {
-        dataStartRow = headerRowCount;
+        dataStartRow = (options && options.recovered) ? 0 : headerRowCount;
       }
 
       // Determine column count (max across all rows)
       const colCount = grid.reduce((max, row) => Math.max(max, row.length), 0);
 
       // ── Build header labels ──────────────────────────────────────────
+      const recovered = options && options.recovered ? options.recovered : null;
       const refined = options && options.refined ? options.refined : null;
       let headers;
 
-      if (refined && refined.headers) {
+      if (recovered && recovered.headers) {
+        headers = [...recovered.headers];
+      } else if (refined && refined.headers) {
         headers = [...refined.headers];
       } else {
         headers = this._buildHeaders(grid, headerRowCount, colCount);
@@ -215,7 +218,26 @@
       csvLines.push(headerCsvCells.join(','));
 
       // Provenance for header cells
-      if (refined && refined.headerProvenance && refined.headerProvenance.length > 0) {
+      if (recovered && recovered.headerProvenance && recovered.headerProvenance.length > 0) {
+        for (let c = 0; c < headers.length; c++) {
+          const hp = recovered.headerProvenance[c] || {};
+          provenance.push({
+            csvRow: csvRowIndex,
+            csvCol: c,
+            sourceFileHash: hp.fileHash || fileHash,
+            sourcePart: hp.part || sourcePart,
+            sourceTableIndex: hp.tableIndex != null ? hp.tableIndex : tableIndex,
+            sourceRowIndex: hp.rowIndex != null ? hp.rowIndex : 0,
+            sourceCellIndex: hp.cellIndex != null ? hp.cellIndex : c,
+            rawText: headers[c],
+            headerLabel: headers[c],
+            isHeader: true,
+            recovered: true,
+            signals: hp.signals || (recovered.signals || []).slice(),
+            placeholder: hp.placeholder || null
+          });
+        }
+      } else if (refined && refined.headerProvenance && refined.headerProvenance.length > 0) {
         for (let c = 0; c < headers.length; c++) {
           const hp = refined.headerProvenance[c] || {};
           provenance.push({

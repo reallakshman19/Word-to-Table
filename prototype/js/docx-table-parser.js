@@ -72,6 +72,21 @@
       const xmlText = await docEntry.async('string');
       this._log('info', `Loaded word/document.xml (${xmlText.length} chars)`);
 
+      // Read word/styles.xml if present to discover bold styles (e.g. Strong)
+      this.boldStyles = new Set();
+      const stylesEntry = zip.file('word/styles.xml');
+      if (stylesEntry) {
+        const stylesXml = await stylesEntry.async('string');
+        const styleRegex = /<w:style[^>]*?w:styleId="([^"]+)"[\s\S]*?<\/w:style>/g;
+        let sm;
+        while ((sm = styleRegex.exec(stylesXml)) !== null) {
+          if (/<w:b(\/|>|\s)/.test(sm[0])) {
+            this.boldStyles.add(sm[1]);
+          }
+        }
+        this._log('info', `Loaded word/styles.xml (${this.boldStyles.size} bold styles)`);
+      }
+
       // ── 3. Parse the XML ────────────────────────────────────────────
       const domParser = new DOMParser();
       const xmlDoc = domParser.parseFromString(xmlText, 'application/xml');
@@ -169,6 +184,75 @@
           reg
         );
         tables.push(tableObj);
+      }
+
+      // ── 6b. Discover preceding blocks & link tables ────────────────
+      const elementToTable = new Map();
+      for (let i = 0; i < tableRegistry.length; i++) {
+        elementToTable.set(tableRegistry[i].element, tables[i]);
+      }
+
+      const PROPERTY_TAGS = new Set(['tcPr', 'tblPr', 'trPr', 'tblGrid']);
+
+      for (let i = 0; i < tableRegistry.length; i++) {
+        const tObj = tables[i];
+        let currentEl = tableRegistry[i].element;
+        const precedingTableIndices = [];
+        let precedingText = null;
+
+        while (currentEl) {
+          const parent = currentEl.parentNode;
+          if (!parent) break;
+          const sibs = parent.children;
+          const idx = sibs.indexOf(currentEl);
+          if (idx === -1) break;
+
+          let climbed = false;
+          let hitStop = false;
+
+          for (let sIdx = idx - 1; sIdx >= 0; sIdx--) {
+            const sib = sibs[sIdx];
+            if (PROPERTY_TAGS.has(sib.localName)) continue;
+            if (sib.localName === 'p' || sib.nodeName === 'w:p') {
+              const txt = this._extractParagraphTextOnly(sib);
+              if (txt.length === 0) {
+                continue; // empty paragraph, skip
+              } else {
+                if (precedingTableIndices.length === 0) {
+                  precedingText = txt;
+                }
+                hitStop = true;
+                break;
+              }
+            } else if (sib.localName === 'tbl' || sib.nodeName === 'w:tbl') {
+              const precTable = elementToTable.get(sib);
+              if (precTable) {
+                precedingTableIndices.push(precTable.physicalIndex);
+              }
+            } else {
+              hitStop = true;
+              break;
+            }
+          }
+
+          if (hitStop) break;
+
+          // Climb out of 1x1 holder if at the top of cell
+          if ((parent.localName === 'tc' || parent.nodeName === 'w:tc') &&
+              parent.parentNode && parent.parentNode.parentNode) {
+            const holderTbl = parent.parentNode.parentNode;
+            if ((holderTbl.localName === 'tbl' || holderTbl.nodeName === 'w:tbl') &&
+                this._is1x1Holder(holderTbl)) {
+              currentEl = holderTbl;
+              climbed = true;
+            }
+          }
+
+          if (!climbed) break;
+        }
+
+        tObj.precedingTableIndices = precedingTableIndices;
+        tObj.precedingText = precedingText;
       }
 
       // ── 7. Count images in the document (for screenshot-only detection) ──
@@ -270,6 +354,61 @@
         });
       }
 
+      // ── Grid column widths ─────────────────────────────────────────
+      const gridEls = this._directChildrenByTag(tblElement, 'tblGrid');
+      const gridColWidths = [];
+      if (gridEls.length > 0) {
+        const colEls = this._directChildrenByTag(gridEls[0], 'gridCol');
+        for (const col of colEls) {
+          const w = parseInt(col.getAttribute('w:w') || col.getAttributeNS(WORD_NS, 'w') || '0', 10);
+          gridColWidths.push(w);
+        }
+      }
+
+      // ── Row 0 header signals (tblHeader, bold, bottom border) ───────
+      const signals = [];
+      if (rowElements.length > 0) {
+        const r0 = rowElements[0];
+        // 1. repeat-header: w:tblHeader on row
+        const trPrEls = this._directChildrenByTag(r0, 'trPr');
+        if (trPrEls.length > 0) {
+          const thEls = this._directChildrenByTag(trPrEls[0], 'tblHeader');
+          if (thEls.length > 0) {
+            const val = thEls[0].getAttribute('w:val') || thEls[0].getAttributeNS(WORD_NS, 'val');
+            if (val !== '0' && val !== 'false') {
+              signals.push('repeat-header');
+            }
+          }
+        }
+
+        // 2. bold: all non-empty text in row 0 is bold
+        const cellElements0 = this._directChildrenByTag(r0, 'tc');
+        let r0HasText = false;
+        let r0AllBold = true;
+        for (const cellEl of cellElements0) {
+          const bInfo = this._cellIsBold(cellEl);
+          if (bInfo.hasText) {
+            r0HasText = true;
+            if (!bInfo.isBold) r0AllBold = false;
+          }
+        }
+        if (r0HasText && r0AllBold) {
+          signals.push('bold');
+        }
+
+        // 3. underlined: bottom border on every cell
+        let allUnderlined = cellElements0.length > 0;
+        for (const cellEl of cellElements0) {
+          if (!this._cellHasBottomBorder(cellEl, tblElement)) {
+            allUnderlined = false;
+            break;
+          }
+        }
+        if (allUnderlined) {
+          signals.push('underlined');
+        }
+      }
+
       // ── Build table object (flat structure for easy consumption) ────
       return {
         physicalIndex,                              // 1-based among all tables (140)
@@ -282,11 +421,71 @@
         nestedTableIndices: regEntry.nestedTableIndices,
         grid: normalizedGrid,
         rowMetadata,
+        gridColWidths,
+        signals,
+        is1x1Holder: this._is1x1Holder(tblElement),
+        precedingTableIndices: [],
+        precedingText: null,
         sourceXml: rawXml,
         sourceFileHash: fileHash,
         sourcePart: 'word/document.xml',
         sourceTableIndex: physicalIndex,
       };
+    }
+
+    /**
+     * Check if a cell element has a bottom border.
+     */
+    _cellHasBottomBorder(cellEl, tblElement) {
+      const tcPrEls = this._directChildrenByTag(cellEl, 'tcPr');
+      if (tcPrEls.length > 0) {
+        const tcBordersEls = this._directChildrenByTag(tcPrEls[0], 'tcBorders');
+        if (tcBordersEls.length > 0) {
+          const bottomEls = this._directChildrenByTag(tcBordersEls[0], 'bottom');
+          if (bottomEls.length > 0) {
+            const val = bottomEls[0].getAttribute('w:val') || bottomEls[0].getAttributeNS(WORD_NS, 'val');
+            return val && val !== 'none' && val !== 'nil';
+          }
+        }
+      }
+      const tblPrEls = this._directChildrenByTag(tblElement, 'tblPr');
+      if (tblPrEls.length > 0) {
+        const tblBordersEls = this._directChildrenByTag(tblPrEls[0], 'tblBorders');
+        if (tblBordersEls.length > 0) {
+          const bottomEls = this._directChildrenByTag(tblBordersEls[0], 'bottom');
+          if (bottomEls.length > 0) {
+            const val = bottomEls[0].getAttribute('w:val') || bottomEls[0].getAttributeNS(WORD_NS, 'val');
+            return val && val !== 'none' && val !== 'nil';
+          }
+        }
+      }
+      return false;
+    }
+
+    /**
+     * Check if a table element is a 1x1 holder table with no text of its own.
+     */
+    _is1x1Holder(tblElement) {
+      const rowEls = this._directChildrenByTag(tblElement, 'tr');
+      if (rowEls.length !== 1) return false;
+      const cellEls = this._directChildrenByTag(rowEls[0], 'tc');
+      if (cellEls.length !== 1) return false;
+      const nestedTbls = this._directChildrenByTag(cellEls[0], 'tbl');
+      if (nestedTbls.length === 0) return false;
+      const ownText = this._extractCellText(cellEls[0]).trim();
+      return ownText.length === 0;
+    }
+
+    /**
+     * Extract text only from a paragraph element (skipping nested tables).
+     */
+    _extractParagraphTextOnly(pEl) {
+      const runs = this._getRunsInParagraph(pEl);
+      let text = '';
+      for (const r of runs) {
+        text += this._extractRunText(r);
+      }
+      return text.trim();
     }
 
     // ─── Cell parsing ────────────────────────────────────────────────────
@@ -446,6 +645,13 @@
                 (rp.namespaceURI === WORD_NS || !rp.namespaceURI || rp.prefix === 'w')) {
               const val = rp.getAttribute('w:val') || rp.getAttributeNS(WORD_NS, 'val');
               return val !== '0' && val !== 'false';
+            }
+            if ((rp.localName === 'rStyle' || rp.nodeName === 'w:rStyle') &&
+                (rp.namespaceURI === WORD_NS || !rp.namespaceURI || rp.prefix === 'w')) {
+              const sVal = rp.getAttribute('w:val') || rp.getAttributeNS(WORD_NS, 'val');
+              if (sVal && this.boldStyles && this.boldStyles.has(sVal)) {
+                return true;
+              }
             }
           }
         }
