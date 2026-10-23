@@ -187,7 +187,48 @@
       margin-bottom: 12px;
       font-size: 0.85rem;
     }
+    .title-path-box {
+      background: #161c28;
+      border: 1px solid #28344a;
+      border-radius: 4px;
+      padding: 6px 12px;
+      margin-bottom: 10px;
+      font-size: 0.82rem;
+      color: #7aa2f7;
+    }
+    .title-path-link {
+      color: #e1e7ec;
+      text-decoration: underline;
+      text-decoration-style: dotted;
+    }
+    .title-path-link:hover {
+      color: #7aa2f7;
+      text-decoration: underline;
+    }
+    .badge-inherited {
+      font-size: 0.7rem;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(224, 175, 104, 0.15);
+      color: #e0af68;
+      font-style: italic;
+      margin-left: 4px;
+    }
+    .badge-recovered {
+      background: rgba(42, 195, 222, 0.2);
+      border: 1px solid rgba(42, 195, 222, 0.4);
+      color: #2ac3de;
+    }
   `;
+
+  function formatTitlePathHtml(titlePath, inherited) {
+    if (!titlePath || !Array.isArray(titlePath) || titlePath.length === 0) return '';
+    const links = titlePath.map(line =>
+      `<a class="title-path-link" href="#t${line.tableIndex}">#${line.tableIndex} row 0: ${escapeHtml(line.text)}</a>`
+    ).join(' &gt; ');
+    const inhTag = inherited ? ' <span class="badge-inherited">(inherited)</span>' : '';
+    return `  <div class="title-path-box"><strong>Title:</strong> ${links}${inhTag}</div>\n`;
+  }
 
   class BatchExporter {
     /**
@@ -225,6 +266,8 @@
           html += `      <span class="badge badge-refine">Spans Present</span>\n`;
         }
         html += `    </div>\n  </div>\n`;
+
+        html += formatTitlePathHtml(t.titlePath, t.titleInherited);
 
         html += `  <div class="table-scroll">\n    <table class="data-table"><tbody>\n`;
         for (let r = 0; r < t.rowCount; r++) {
@@ -306,13 +349,45 @@
         if (res.refineRule) {
           html += `      <span class="badge badge-refine">Refine: ${escapeHtml(res.refineRule)}</span>\n`;
         }
+        if (res.recovered && res.recovered.success) {
+          html += `      <span class="badge badge-recovered">Recovered: #${res.recovered.sourcePhysicalIndex} (${escapeHtml(res.recovered.signals.join(', '))})</span>\n`;
+        }
         html += `    </div>\n  </div>\n`;
+
+        html += formatTitlePathHtml(t.titlePath, t.titleInherited);
 
         if (res.status === 'FAILED') {
           html += `  <div class="error-notice"><strong>Processing Error:</strong> ${escapeHtml(res.error || 'Unknown error')}</div>\n`;
         }
 
-        if (refined && refined.headers) {
+        const rec = res.recovered && res.recovered.success ? res.recovered : null;
+        if (rec) {
+          html += `  <div class="table-scroll">\n    <table class="data-table">\n`;
+          html += `      <thead>\n        <tr><th class="row-idx" title="Recovered header from #${rec.sourcePhysicalIndex} row 0">H</th>`;
+          for (let c = 0; c < rec.headers.length; c++) {
+            html += `<th title="Recovered from #${rec.sourcePhysicalIndex} row 0 cell ${c} (signals: ${escapeHtml(rec.signals.join(', '))})">${escapeHtml(rec.headers[c])}</th>`;
+          }
+          html += `</tr>\n      </thead>\n`;
+          html += `      <tbody>\n`;
+          for (let r = 0; r < t.rowCount; r++) {
+            const row = t.grid[r];
+            html += `        <tr><td class="row-idx" title="Source row ${r}">${r}</td>`;
+            if (row) {
+              for (let c = 0; c < t.colCount; c++) {
+                const cell = row[c];
+                let text = '';
+                if (cell && cell.spanned) {
+                  text = '';
+                } else if (cell) {
+                  text = cell.text || '';
+                }
+                html += `<td>${escapeHtml(text)}</td>`;
+              }
+            }
+            html += `</tr>\n`;
+          }
+          html += `      </tbody>\n    </table>\n  </div>\n`;
+        } else if (refined && refined.headers) {
           const hasGroup = Boolean(refined.groupColumn);
           const excludeRows = refined.excludeRows || [];
 
@@ -413,7 +488,12 @@
         html += `      <span class="badge ${res.status === 'OK' ? 'badge-ok' : 'badge-failed'}">${res.status}</span>\n`;
         if (res.autoRule) html += `      <span class="badge badge-auto">${escapeHtml(res.autoRule)}</span>\n`;
         if (res.refineRule) html += `      <span class="badge badge-refine">${escapeHtml(res.refineRule)}</span>\n`;
+        if (res.recovered && res.recovered.success) {
+          html += `      <span class="badge badge-recovered">Recovered: #${res.recovered.sourcePhysicalIndex}</span>\n`;
+        }
         html += `    </div>\n  </div>\n`;
+
+        html += formatTitlePathHtml(t.titlePath, t.titleInherited);
 
         html += `  <div class="compare-row">\n`;
 
@@ -442,7 +522,26 @@
         // Right Col: After
         html += `    <div class="compare-col">\n`;
         html += `      <div class="compare-col-title">After (Auto + Refined)</div>\n`;
-        if (refined && refined.headers) {
+        const rec = res.recovered && res.recovered.success ? res.recovered : null;
+        if (rec) {
+          html += `      <div class="table-scroll"><table class="data-table"><thead><tr><th class="row-idx" title="Recovered header from #${rec.sourcePhysicalIndex} row 0">H</th>`;
+          for (let c = 0; c < rec.headers.length; c++) {
+            html += `<th title="Recovered from #${rec.sourcePhysicalIndex} row 0 cell ${c} (signals: ${escapeHtml(rec.signals.join(', '))})">${escapeHtml(rec.headers[c])}</th>`;
+          }
+          html += `</tr></thead><tbody>\n`;
+          for (let r = 0; r < t.rowCount; r++) {
+            const row = t.grid[r];
+            html += `        <tr><td class="row-idx">${r}</td>`;
+            if (row) {
+              for (let c = 0; c < t.colCount; c++) {
+                const cell = row[c];
+                html += `<td>${escapeHtml((cell && !cell.spanned) ? cell.text : '')}</td>`;
+              }
+            }
+            html += `</tr>\n`;
+          }
+          html += `      </tbody></table></div>\n`;
+        } else if (refined && refined.headers) {
           const hasGroup = Boolean(refined.groupColumn);
           const excludeRows = refined.excludeRows || [];
           html += `      <div class="table-scroll"><table class="data-table"><thead><tr><th class="row-idx">H</th>`;
