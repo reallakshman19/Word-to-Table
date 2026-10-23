@@ -425,15 +425,27 @@
     const t = getActiveTable();
     if (!t) return;
 
+    if (currentRefined) {
+      // Table is already refined! Pressing a second time changes nothing and says "already refined"
+      if (refineRuleBadge) {
+        refineRuleBadge.style.display = '';
+        const prev = refineRuleBadge.innerHTML;
+        if (!prev.includes('already refined')) {
+          refineRuleBadge.innerHTML = prev + ' <span class="badge-already-refined">(already refined)</span>';
+        }
+      }
+      return;
+    }
+
     const hr = parseInt(headerRowsSelect.value, 10);
     const ds = Math.max(parseInt(dataStartInput.value, 10) || 0, 0);
 
-    // Save previous state for Undo
+    // Save previous state for Undo (only before initial refine)
     preRefineState = {
       headerRowCount: hr,
       dataStartRow: ds,
-      foldedLabel: currentFoldedLabel,
-      autoRuleFired: autoRuleFired ? { ...autoRuleFired } : null
+      foldedLabel: currentFoldedLabel ? Object.assign({}, currentFoldedLabel) : null,
+      autoRuleFired: autoRuleFired ? Object.assign({}, autoRuleFired) : null
     };
 
     const refined = window.TableRefiner.refine(t, hr, ds, currentFoldedLabel);
@@ -443,10 +455,24 @@
     headerRowsSelect.value = String(refined.headerRowCount);
     dataStartInput.value = String(refined.dataStartRow);
 
-    // Display refined badge
+    // Lock controls while refined (Defects 1 & 4)
+    headerRowsSelect.disabled = true;
+    dataStartInput.disabled = true;
+    if (btnRefineTable) {
+      btnRefineTable.disabled = true;
+      btnRefineTable.title = 'Already refined (Undo to edit)';
+    }
+
+    // Hide Auto badge while refined to prevent rule collision (Defect 4)
+    if (autoRuleBadge) {
+      autoRuleBadge.style.display = 'none';
+    }
+
+    // Display refined badge with friendly rule name (Defect 4)
     if (refineRuleBadge) {
       refineRuleBadge.style.display = '';
-      refineRuleBadge.innerHTML = `✨ <strong>[${esc(refined.rule)}]</strong> ${esc(refined.diagnostic)}`;
+      const rName = refined.ruleName || refined.rule;
+      refineRuleBadge.innerHTML = `✨ <strong>[${esc(rName)}]</strong> ${esc(refined.diagnostic)} <span class="refined-locked-hint">Refined view (Undo to edit)</span>`;
     }
     if (btnUndoRefine) {
       btnUndoRefine.style.display = '';
@@ -460,14 +486,28 @@
 
     headerRowsSelect.value = String(preRefineState.headerRowCount);
     dataStartInput.value = String(preRefineState.dataStartRow);
-    currentFoldedLabel = preRefineState.foldedLabel;
+    currentFoldedLabel = preRefineState.foldedLabel ? Object.assign({}, preRefineState.foldedLabel) : null;
     autoRuleFired = preRefineState.autoRuleFired;
+
+    headerRowsSelect.disabled = false;
+    dataStartInput.disabled = false;
+    if (btnRefineTable) {
+      btnRefineTable.disabled = false;
+      btnRefineTable.title = 'Auto Refine table form to exactly one header row';
+    }
 
     currentRefined = null;
     preRefineState = null;
 
     if (refineRuleBadge) refineRuleBadge.style.display = 'none';
     if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+
+    // Restore auto badge if auto was active
+    if (autoRuleFired) {
+      autoRuleBadge.style.display = '';
+      autoRuleBadge.className = autoRuleFired.warning ? 'auto-rule-badge auto-rule-warn' : 'auto-rule-badge';
+      autoRuleBadge.textContent = (autoRuleFired.warning ? '⚠ ' : '⚡ ') + autoRuleFired.ruleExplanation;
+    }
 
     renderSelectedTable();
   }

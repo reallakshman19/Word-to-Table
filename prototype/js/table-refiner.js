@@ -49,7 +49,7 @@
       if (!table || !table.grid || table.grid.length === 0) {
         return {
           rule: 'R4',
-          ruleName: 'R4 Nothing to refine',
+          ruleName: 'Nothing to refine',
           diagnostic: 'Empty or invalid table; nothing to refine.',
           headers: [],
           headerRowCount: 0,
@@ -136,7 +136,7 @@
 
         return {
           rule: 'R3',
-          ruleName: 'R3 Label folded',
+          ruleName: 'Label',
           diagnostic: `Label "${lblText}" appended after corner text "${cornerText}" with " | "; row ${labelRowIdx} excluded from data`,
           headers,
           headerRowCount: 1,
@@ -247,7 +247,7 @@
 
         return {
           rule: 'R1',
-          ruleName: 'R1 Title row',
+          ruleName: 'Title row',
           diagnostic: diag,
           headers: finalHeaders,
           headerRowCount: 1,
@@ -356,7 +356,7 @@
 
         return {
           rule: 'R2',
-          ruleName: 'R2 Two ordinary header rows',
+          ruleName: 'Merge two header rows',
           diagnostic: 'R2 Two ordinary header rows merged column by column; second row deleted',
           headers,
           headerRowCount: 1,
@@ -399,7 +399,7 @@
 
       return {
         rule: 'R4',
-        ruleName: 'R4 Nothing to refine',
+        ruleName: 'Nothing to refine',
         diagnostic: 'One header row and no label, or no header; nothing to refine.',
         headers,
         headerRowCount,
@@ -410,7 +410,75 @@
         canUndo: false
       };
     }
+
+    static createSession(table, headerRowCount, dataStartRow, foldedLabel, options = {}) {
+      return new TableRefinerSession(table, headerRowCount, dataStartRow, foldedLabel, options);
+    }
   }
+
+  class TableRefinerSession {
+    constructor(table, headerRowCount, dataStartRow, foldedLabel, options = {}) {
+      this.table = table;
+      this.initialHeaderRowCount = headerRowCount;
+      this.initialDataStartRow = dataStartRow;
+      this.initialFoldedLabel = foldedLabel ? Object.assign({}, foldedLabel) : null;
+      this.options = options;
+
+      this.headerRowCount = headerRowCount;
+      this.dataStartRow = dataStartRow;
+      this.foldedLabel = foldedLabel ? Object.assign({}, foldedLabel) : null;
+
+      this.preRefineState = null;
+      this.refined = null;
+      this.isRefined = false;
+      this.status = 'initial';
+    }
+
+    refine() {
+      if (this.isRefined && this.refined) {
+        this.status = 'already refined';
+        return this.refined;
+      }
+
+      this.preRefineState = {
+        headerRowCount: this.headerRowCount,
+        dataStartRow: this.dataStartRow,
+        foldedLabel: this.foldedLabel ? Object.assign({}, this.foldedLabel) : null
+      };
+
+      this.refined = TableRefiner.refine(
+        this.table,
+        this.headerRowCount,
+        this.dataStartRow,
+        this.foldedLabel,
+        this.options
+      );
+
+      this.isRefined = true;
+      this.headerRowCount = this.refined.headerRowCount;
+      this.dataStartRow = this.refined.dataStartRow;
+      this.status = 'refined';
+      return this.refined;
+    }
+
+    undo() {
+      if (!this.preRefineState) {
+        return null;
+      }
+
+      this.headerRowCount = this.preRefineState.headerRowCount;
+      this.dataStartRow = this.preRefineState.dataStartRow;
+      this.foldedLabel = this.preRefineState.foldedLabel ? Object.assign({}, this.preRefineState.foldedLabel) : null;
+
+      this.refined = null;
+      this.isRefined = false;
+      this.preRefineState = null;
+      this.status = 'undone';
+      return this;
+    }
+  }
+
+  TableRefiner.Session = TableRefinerSession;
 
   // Export for browser and Node.js
   if (typeof window !== 'undefined') {
