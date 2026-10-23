@@ -198,16 +198,25 @@
         let finalHeaders = baseHeaders;
         let finalSourceCells = baseSourceCells;
         let effectiveGroupColumn = null;
+        let groupSourceInfo = null;
 
         if (groupName && groupMode === 'G1') {
           effectiveGroupColumn = groupName;
           finalHeaders = ['Group', ...baseHeaders];
-          const groupSource = groupCell && groupCell.provenance ? [{
+          groupSourceInfo = {
             tableIndex: table.physicalIndex,
-            rowIndex: groupCell.provenance.rowIndex,
-            cellIndex: groupCell.provenance.cellIndex,
+            rowIndex: (groupCell && groupCell.provenance) ? groupCell.provenance.rowIndex : 0,
+            cellIndex: (groupCell && groupCell.provenance) ? groupCell.provenance.cellIndex : 0,
+            span: (groupCell && groupCell.gridSpan) ? groupCell.gridSpan : 1,
             rawText: groupName
-          }] : [];
+          };
+          const groupSource = [{
+            tableIndex: groupSourceInfo.tableIndex,
+            rowIndex: groupSourceInfo.rowIndex,
+            cellIndex: groupSourceInfo.cellIndex,
+            span: groupSourceInfo.span,
+            rawText: groupName
+          }];
           finalSourceCells = [groupSource, ...baseSourceCells];
         } else if (groupName && groupMode === 'prefix') {
           finalHeaders[0] = groupName + ' | ' + finalHeaders[0];
@@ -254,6 +263,7 @@
           dataStartRow: 2,
           excludeRows: [0],
           groupColumn: effectiveGroupColumn,
+          groupSource: groupSourceInfo,
           headerProvenance,
           canUndo: true
         };

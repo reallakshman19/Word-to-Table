@@ -512,6 +512,19 @@
     renderSelectedTable();
   }
 
+  function navigateToSource(tableIndex, rowIndex, cellIndex) {
+    const sourceTab = document.querySelector('.content-tab[data-panel="sourcePanel"]');
+    if (sourceTab) {
+      switchTab(sourceTab);
+      const existingNotice = sourcePanel.querySelector('.nav-source-notice');
+      if (existingNotice) existingNotice.remove();
+      const notice = document.createElement('div');
+      notice.className = 'notice notice-info nav-source-notice';
+      notice.innerHTML = `📍 <strong>Source Navigation:</strong> Group title cell for Table #${tableIndex}, Row ${rowIndex}, Cell ${cellIndex}`;
+      sourcePanel.prepend(notice);
+    }
+  }
+
   // ─── Table Rendering ───
 
   function getActiveTable() {
@@ -564,7 +577,11 @@
         const row = grid[r];
         html += `<tr><td class="row-idx">${outRowIdx}</td>`;
         if (hasGroup) {
-          html += `<td style="font-weight:600; color:var(--accent)">${esc(currentRefined.groupColumn)}</td>`;
+          const gSrc = currentRefined.groupSource || { tableIndex: table.physicalIndex, rowIndex: 0, cellIndex: 0, span: 1 };
+          html += `<td class="group-cell" title="Derived from Title (Table #${gSrc.tableIndex}, Row ${gSrc.rowIndex}, Cell ${gSrc.cellIndex}, Span ${gSrc.span}): ${esc(currentRefined.groupColumn)} -> Row ${r}">` +
+            `<a href="#source-title-r0-c${gSrc.cellIndex}" class="group-source-link" onclick="app.navigateToSource(${gSrc.tableIndex}, ${gSrc.rowIndex}, ${gSrc.cellIndex}); return false;" data-target-table="${gSrc.tableIndex}" data-target-row="${gSrc.rowIndex}" data-target-cell="${gSrc.cellIndex}" data-destination-row="${r}">${esc(currentRefined.groupColumn)}</a>` +
+            ` <span class="badge-derived" title="Derived/repeated value; earns no coverage credit">derived</span>` +
+            `</td>`;
         }
         for (let c = 0; c < table.colCount; c++) {
           const cell = row[c];
@@ -662,6 +679,11 @@
   }
 
   // ─── Source XML Rendering ───
+
+  function navigateToSource(tableIndex, rowIndex, cellIndex) {
+    const sourceTab = contentTabs.querySelector('[data-panel="sourcePanel"]');
+    if (sourceTab) switchTab(sourceTab);
+  }
 
   function renderSource(table) {
     const xml = table.sourceXml || '(source not available)';
@@ -825,12 +847,14 @@
   // ─── Public API ───
 
   window.app = {
+    navigateToSource,
     onFilterChange,
     onTableSelectChange,
     selectTableByPhysicalIndex,
     applyAutoHeader,
     applyRefineTableForm,
     undoRefineTableForm,
+    navigateToSource,
     switchTab,
     downloadSelectedCsv,
     isTableWithData,

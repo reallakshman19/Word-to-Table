@@ -285,6 +285,75 @@ function assert(cond, msg) {
       `Table #${item.id}: Refined state is cleared upon Undo`);
   }
 
+  // ─── Defect 5 & A1: Group Column Source Linkage & Coverage Integrity ───
+  console.log('\n[Defect 5 & A1: Group Column Source Linkage & Coverage Integrity]');
+  const groupTables = [
+    { id: 33, idx: 32, group: 'Pipes', span: 2 },
+    { id: 35, idx: 34, group: 'Flanges', span: 2 },
+    { id: 37, idx: 36, group: 'Fittings', span: 2 },
+    { id: 39, idx: 38, group: 'Valves', span: 2 },
+    { id: 41, idx: 40, group: 'Miscellaneous', span: 2 }
+  ];
+
+  const exporter = new CsvExporter();
+
+  for (const g of groupTables) {
+    const tbl = res.tables[g.idx];
+    const sugg = AutoHeaderV3.suggest(tbl);
+    const refined = TableRefiner.refine(tbl, sugg.headerRowCount, sugg.dataStartRow, sugg.foldedLabel);
+
+    // Verify groupSource structure
+    assert(refined.groupSource != null, `Table #${g.id}: groupSource exists`);
+    assert(refined.groupSource.rowIndex === 0, `Table #${g.id}: groupSource points to title rowIndex 0`);
+    assert(refined.groupSource.cellIndex === 0, `Table #${g.id}: groupSource points to title cellIndex 0`);
+    assert(refined.groupSource.span === g.span, `Table #${g.id}: groupSource records span ${g.span}`);
+    assert(refined.groupSource.rawText === g.group, `Table #${g.id}: groupSource records title text "${g.group}"`);
+
+    // Verify CSV export and provenance for Group values
+    const exp = exporter.exportTable(tbl, 1, 2, { refined });
+    const groupProvRecords = exp.provenance.filter(p => !p.isHeader && p.csvCol === 0);
+    assert(groupProvRecords.length > 0, `Table #${g.id}: Generated ${groupProvRecords.length} group data records`);
+
+    let allDerivedCorrect = true;
+    for (const gp of groupProvRecords) {
+      if (gp.derived !== true || gp.repeated !== true || gp.coverageCredit !== false ||
+          gp.sourceRowIndex !== 0 || gp.sourceCellIndex !== 0 || gp.span !== g.span) {
+        allDerivedCorrect = false;
+        break;
+      }
+    }
+    assert(allDerivedCorrect, `Table #${g.id}: All group values marked derived/repeated, point to title cell (r=0, c=0, span=${g.span}), coverageCredit: false`);
+
+    // Verify destinationRow on each record
+    let destRowsCorrect = true;
+    for (let i = 0; i < groupProvRecords.length; i++) {
+      if (groupProvRecords[i].destinationRow !== (refined.dataStartRow + i)) {
+        destRowsCorrect = false;
+        break;
+      }
+    }
+    assert(destRowsCorrect, `Table #${g.id}: Group provenance records link to correct destination rows`);
+
+    // Verify coverage counts unchanged by Group values
+    const covTotal = exporter.calculateSourceCoverage(exp.provenance);
+    const covWithoutRepeated = exporter.calculateSourceCoverage(exp.provenance.filter(p => !p.derived));
+    assert(covTotal === covWithoutRepeated, `Table #${g.id}: Source coverage count (${covTotal}) unchanged by Group column values`);
+  }
+
+  // Verify empty group is shown as such, never guessed
+  const syntheticEmptyGroupTbl = {
+    physicalIndex: 999,
+    rowCount: 3,
+    colCount: 4,
+    grid: [
+      [{ text: '', gridSpan: 2, provenance: { rowIndex: 0, cellIndex: 0 } }, null, { text: 'Title Values', gridSpan: 2, provenance: { rowIndex: 0, cellIndex: 2 } }, null],
+      [{ text: 'Col A', provenance: { rowIndex: 1, cellIndex: 0 } }, { text: 'Col B', provenance: { rowIndex: 1, cellIndex: 1 } }, { text: 'Col C', provenance: { rowIndex: 1, cellIndex: 2 } }, { text: 'Col D', provenance: { rowIndex: 1, cellIndex: 3 } }],
+      [{ text: 'Val 1', provenance: { rowIndex: 2, cellIndex: 0 } }, { text: 'Val 2', provenance: { rowIndex: 2, cellIndex: 1 } }, { text: 'Val 3', provenance: { rowIndex: 2, cellIndex: 2 } }, { text: 'Val 4', provenance: { rowIndex: 2, cellIndex: 3 } }]
+    ]
+  };
+  const refEmpty = TableRefiner.refine(syntheticEmptyGroupTbl, 2, 2, null);
+  assert(refEmpty.groupColumn === null || refEmpty.groupColumn === '', 'Empty group is shown as such, never guessed');
+
   console.log('\n===============================================================');
   console.log(`  Repair Test Summary: ${passed}/${passed + failed} tests passed (${failed} failed)`);
   console.log('===============================================================\n');

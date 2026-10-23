@@ -665,3 +665,59 @@ body {
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Group Column & Derived Values (A1 / Defect 5) ─── */
+.group-cell {
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap !important;
+}
+
+.group-source-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  cursor: pointer;
+}
+
+.group-source-link:hover {
+  color: #7aa2f7;
+  text-decoration: underline;
+}
+
+.badge-derived {
+  display: inline-block;
+  font-size: 0.65rem;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(122, 162, 247, 0.15);
+  color: var(--accent);
+  font-weight: 500;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.group-cell {
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(122, 162, 247, 0.05);
+}
+.group-source-link {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.group-source-link:hover {
+  color: var(--text-bright);
+}
+.badge-derived {
+  font-size: 0.65rem;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(224, 175, 104, 0.2);
+  color: var(--yellow);
+  font-weight: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 4px;
+}

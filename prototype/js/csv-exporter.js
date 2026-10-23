@@ -299,6 +299,7 @@
 
         // If Group column is present (Rule R1 Option G1), prepend group value
         if (hasGroupCol) {
+          const gSrc = (refined && refined.groupSource) ? refined.groupSource : null;
           csvCells.push(this._escapeCell(refined.groupColumn));
           provenance.push({
             csvRow: csvRowIndex,
@@ -306,16 +307,28 @@
             sourceFileHash: fileHash,
             sourcePart: sourcePart,
             sourceTableIndex: tableIndex,
-            sourceRowIndex: 0,
-            sourceCellIndex: 0,
+            sourceRowIndex: gSrc ? gSrc.rowIndex : 0,
+            sourceCellIndex: gSrc ? gSrc.cellIndex : 0,
+            span: gSrc ? gSrc.span : 1,
             rawText: refined.groupColumn,
             headerLabel: 'Group',
             isHeader: false,
             rule: refined.rule,
-            sourceCells: [{
+            derived: true,
+            repeated: true,
+            destinationRow: r,
+            coverageCredit: false,
+            sourceCells: gSrc ? [{
+              tableIndex,
+              rowIndex: gSrc.rowIndex,
+              cellIndex: gSrc.cellIndex,
+              span: gSrc.span,
+              rawText: refined.groupColumn
+            }] : [{
               tableIndex,
               rowIndex: 0,
               cellIndex: 0,
+              span: 1,
               rawText: refined.groupColumn
             }],
             foldedFrom: null,
@@ -372,7 +385,31 @@
      * @param {string} csvString  The CSV content to download.
      * @param {string} filename   Desired filename (e.g. "export.csv").
      */
-    downloadCsv(csvString, filename) {
+    /**
+   * Calculate distinct physical source cell coverage count from provenance records.
+   * Derived/repeated values with coverageCredit: false do not earn additional coverage credit.
+   */
+  calculateCoverage(provenance) {
+    return this.calculateSourceCoverage(provenance);
+  }
+
+  calculateSourceCoverage(provenance) {
+    if (!Array.isArray(provenance)) return 0;
+    const uniqueCells = new Set();
+    for (const p of provenance) {
+      if (p.coverageCredit === false) continue;
+      if (p.sourceCells && p.sourceCells.length > 0) {
+        for (const sc of p.sourceCells) {
+          uniqueCells.add(`${sc.tableIndex || p.sourceTableIndex}:${sc.rowIndex}:${sc.cellIndex}`);
+        }
+      } else if (p.sourceRowIndex != null && p.sourceRowIndex >= 0 && p.sourceCellIndex != null && p.sourceCellIndex >= 0) {
+        uniqueCells.add(`${p.sourceTableIndex}:${p.sourceRowIndex}:${p.sourceCellIndex}`);
+      }
+    }
+    return uniqueCells.size;
+  }
+
+  downloadCsv(csvString, filename) {
       // Prepend BOM for Excel compatibility with UTF-8
       const bom = '\uFEFF';
       const blob = new Blob([bom + csvString], { type: 'text/csv;charset=utf-8;' });
