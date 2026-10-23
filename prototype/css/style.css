@@ -139,6 +139,120 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.nav-filter-section, .nav-selector-section {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.nav-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.nav-select {
+  width: 100%;
+  background: var(--bg-elevated);
+  color: var(--text-bright);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.nav-select:focus {
+  border-color: var(--accent);
+}
+
+.filter-hint {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.nav-details {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.table-info-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  font-size: 0.8rem;
+}
+
+.table-info-card h4 {
+  color: var(--text-bright);
+  font-size: 0.88rem;
+  margin-bottom: 6px;
+}
+
+.table-info-card .info-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 0.76rem;
+}
+
+.table-info-card .info-row .label {
+  color: var(--text-muted);
+}
+
+.table-info-card .info-row .val {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.btn-auto {
+  background: var(--accent-dim);
+  color: var(--text-bright);
+  border-color: var(--accent);
+  font-weight: 600;
+  padding: 5px 12px;
+}
+
+.btn-auto:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.auto-rule-badge {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  background: rgba(122, 162, 247, 0.12);
+  border: 1px solid var(--accent-dim);
+  color: var(--text-bright);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 480px;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.data-grid tr.label-row td {
+  background: rgba(224, 175, 104, 0.12);
+  color: var(--yellow);
+  font-style: italic;
+}
+
+.data-grid .folded-header-cell {
+  background: rgba(158, 206, 106, 0.15) !important;
+  color: var(--green) !important;
+  border-left: 3px solid var(--green) !important;
+}
+
 .nav-list {
   flex: 1;
   overflow-y: auto;

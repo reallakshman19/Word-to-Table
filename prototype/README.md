@@ -1,4 +1,4 @@
-# Doc2Table — Step D2T-S1 Prototype (WBS 4.1)
+# Doc2Table — Steps D2T-S1 & D2T-S1.1 Prototype (WBS 4.1 & 4.1.1)
 
 Flexible native Word table extraction on GitHub Pages with source-linked raw leftovers.
 
@@ -16,65 +16,83 @@ Alternatively, you can open `prototype/index.html` directly or serve it via any 
 
 ---
 
-## Walkthrough Demo Steps
+## Walkthrough Demo Steps (D2T-S1.1 / B2.1)
 
-### Step 1: Open Native Word.docx
-1. Launch the prototype using `start-d2t.cmd`.
-2. Drag and drop `Native Word.docx` into the drop zone (or click **"Open .docx file"** and browse to `C:\CodeC\Doc to Table\Native Word.docx`).
-3. Observe status bar and navigator:
-   - **Total tables:** 140
-   - **Body-level tables:** 131
-   - **Nested tables:** 9 (e.g., Table 3 in 2, 11 in 10, 33 in 32, 35 in 34, 37 in 36, 39 in 38, 41 in 40, 44 in 43, 52 in 51)
-   - **Total rows:** 610
+### Demo 1: Table Dropdown & Physical IDs (List all)
+1. Launch the prototype using `start-d2t.cmd` and drop `Native Word.docx` (from `C:\CodeC\Doc to Table\Native Word.docx`).
+2. In **List all** mode, use the **Select Table** dropdown to pick physical tables **#3**, **#11**, and **#33**.
+3. Confirm that the displayed physical IDs, dimensions, and nested relationships match the source table inventory (#1 to #140).
 
-### Step 2: Inspect a Physical Table & Source XML
-1. Click any table in the left sidebar (e.g., **Table 1** or nested **Table 3**).
-2. The **Grid** tab shows the unaltered physical table with cell contents. Spanned cells are labeled `⬅ span` and nested tables are indicated with `📋 [nested table N]`.
-3. Switch to the **Source XML** tab to inspect the raw `<w:tbl>` OpenXML element with syntax highlighting.
+### Demo 2: Table Filter (List all vs Only Tables with data)
+1. Switch the **Filter** dropdown between **List all** and **Only Tables with data**.
+2. **Only Tables with data** applies the predicate: `rowCount >= 2 AND colCount >= 2` (logical grid column count >= 2; no text condition). Exactly 50 tables qualify.
+3. Observe:
+   - Blank 2x2 table #8 stays in the filter.
+   - Populated 1x2 table #1 is excluded from the filter.
+   - All eligible nested tables (#3, #11, #33, #35, #37, #39, #41) remain visible.
+   - Switching back to **List all** restores all 140 tables without renumbering or changing stable IDs.
+   - If the currently selected table survives filtering (e.g. #3), its selection is retained. If an excluded table was selected (e.g. #1), selection is explicitly cleared and exports are disabled with a prompt to select a visible table.
 
-### Step 3: Header Row Selection (0, 1, 2) & Data Start
-1. In the top controls bar, test **Header rows**:
-   - `0 (no header)`: Generates synthetic headers (`Column_1`, `Column_2`, ...). All table rows are exported as data.
-   - `1`: First physical row (row 0) becomes the column headers. Data starts at row 1.
-   - `2`: Combines row 0 and row 1 (`HeaderA / HeaderB`). Data starts at row 2.
-2. Adjust **Data starts at row** independently of the header row count.
-3. Switch to the **CSV Preview** tab to see real-time updates of the RFC 4180 CSV projection.
+### Demo 3: Auto Header v3 — Rule 1 Top Band (#11, #33, #35, #37, #39, #41)
+1. In the dropdown, select **#11** or **#33**.
+2. Click **⚡ Auto**.
+3. Observe:
+   - Header rows set to `0-1` (`headerRowCount = 2`).
+   - Data starts at row `2` (`dataStart = 2`).
+   - Explanation badge shows: `Rule 1: Top band (group title) at row 0 + column header at row 1 -> headers 0-1, data from row 2`.
+4. Switch to **CSV Preview** tab: verify group title and column header are included and data begins at row 2.
+5. Manually adjust header rows or data start: observe that manual edits operate independently without being locked.
 
-### Step 4: Leading-Zero Strings & CSV Export
-1. Select a table containing leading-zero codes (such as Table 44 or Table 52).
-2. In the **CSV Preview** tab, observe literal strings such as `031` and `001` preserved exactly (never truncated to numbers like `31` or `1`).
-3. Click **"⬇ Download CSV"** to save the `.csv` file.
-4. Switch to the **Provenance** tab to inspect the companion record for every exported value:
-   - Source file SHA-256 hash
-   - Source XML part (`word/document.xml`)
-   - Source table index
-   - Source physical row index
-   - Source physical cell index
-   - Raw cell text
+### Demo 4: Auto Header v3 — Rule 2 Label Under Header (#3)
+1. Select table **#3**.
+2. Click **⚡ Auto**.
+3. Observe:
+   - Header row set to `0` (`headerRowCount = 1`).
+   - Data starts at row `2` (`dataStart = 2`).
+   - Label `"Pressure bar(g)"` from source row 1 is folded into header cell 0.
+   - Source row 1 is excluded from the data projection; data row 2 contains `"DN 15-1200"`.
+   - Explanation badge shows: `Rule 2: Header row 0 (all-bold) + label row 1 folded ("Pressure bar(g)"), data from row 2`.
+4. Switch to **Grid** tab: header cell 0 shows `"Pressure bar(g)"` with indicator `[folded: Pressure bar(g)]`, and row 1 is styled as a label row excluded from data.
+5. Switch to **Source XML** tab: observe raw row 1 is completely unmutated.
+6. Switch to **Provenance** tab: observe that header cell (0, 0) contains companion provenance recording BOTH the destination (`Row 0, Cell 0`) and the label source (`Row 1, Cell 0 ["Pressure bar(g)"]`).
+7. Repeated clicks on **⚡ Auto** do NOT duplicate label text (idempotent).
 
-### Step 5: Screenshot-Only Docx (Word Table snaps.docx)
-1. Drop or select `Word Table snaps.docx`.
-2. The prototype displays:
-   - **0 native tables** (both body-level and nested)
-   - Notice: **12 image occurrences** with explicit **not-converted** status.
-   - Zero invented or hallucinated tables.
+### Demo 5: Auto Header v3 — Rule 3 & Rule 4 (#44, #52, #14, #5, #8)
+1. Select **#44** or **#52**:
+   - Click **⚡ Auto**: consecutive bold rows 0-1 including `(DN)` are selected as headers (`headerRowCount = 2`), data starts at row 2.
+2. Select **#14**:
+   - Click **⚡ Auto**: header row 0 selected (`headerRowCount = 1`, data starts at 1) due to differing source cell count (3 vs last row 4).
+3. Select **#5**, **#8**, **#20**, **#24**, **#58**, **#92**, or **#128**:
+   - Click **⚡ Auto**: row 0 is body-like -> `0` header rows selected, data starts at row 0 (`Rule 4`).
+   - In CSV preview, row 0 is retained as data.
+   - Exactly 40 of the 50 eligible tables get 0 headers.
 
 ---
 
 ## Running Node Tests on Real Inputs
 
-To run the comprehensive automated test suite against the real files:
+Both test suites run against the real files in place (`Native Word.docx` and `Word Table snaps.docx`):
 
+### 1. D2T-S1 Baseline Suite (72 tests)
 ```bash
 node tests/test_d2t_s1.js
 ```
 
-This verifies:
-- Cryptographic SHA-256 hashes of both real inputs
-- Accurate table inventory (140 total: 131 body, 9 nested, 610 rows)
-- Nested table relationships and absence of parent double-credit
-- GridSpan expansion (spans of 2, 8, 20) and row normalization
-- Header row configurations (0, 1, 2) and independent data start
-- Leading-zero string preservation (`031`, `001`)
-- Companion provenance records for every CSV cell
+### 2. D2T-S1.1 Targets & Falsifiers Suite (109 tests)
+```bash
+node tests/test_d2t_s1_1.js
+```
+
+### Verified Coverage:
+- File integrity and SHA-256 validation
+- 140 total physical tables, 131 body-level, 9 nested without parent double-credit
+- Filter predicate `rowCount >= 2 && colCount >= 2` (50 eligible tables)
+- Blank 2x2 retained, 1x2 excluded, nested eligible tables preserved
+- Selection retention and explicit clearance when filtered out
+- Auto v3 Rule 1: Top band (group title) on #11, #33, #35, #37, #39, #41
+- Auto v3 Rule 2: Label folding and data exclusion on #3 with companion provenance
+- Auto v3 Rule 3: Consecutive bold rows on #44, #52, differing cell count on #14
+- Auto v3 Rule 4: Stop at first body-like row (40 of 50 tables get no header)
+- Idempotency and independent manual controls
+- Leading-zero strings (`031`, `001`) preserved in CSV
 - Screenshot-only docx detection (0 native tables, 12 images)

@@ -148,9 +148,12 @@
      * @param {number} headerRowCount   Number of header rows (0, 1, or 2).
      * @param {number} [dataStartRow]   Row index where data begins.
      *   Defaults to headerRowCount.
+     * @param {object} [options]        Optional export options:
+     *   - foldedLabel: { text, labelRow, labelCol, targetRow, targetCol } (Auto v3 Rule 2)
+     *   - excludeRows: Array of row indices to exclude from data projection
      * @returns {{ csv: string, provenance: Array }}
      */
-    exportTable(table, headerRowCount, dataStartRow) {
+    exportTable(table, headerRowCount, dataStartRow, options = {}) {
       const grid = table.grid || [];
       if (grid.length === 0) {
         return { csv: '', provenance: [] };
@@ -169,6 +172,24 @@
 
       // Build header labels
       const headers = this._buildHeaders(grid, headerRowCount, colCount);
+
+      // If a folded label is present (Rule 2), fold its text into the target header cell
+      const foldedLabel = options && options.foldedLabel ? options.foldedLabel : null;
+      if (foldedLabel && foldedLabel.text) {
+        const targetCol = typeof foldedLabel.targetCol === 'number' ? foldedLabel.targetCol : 0;
+        if (targetCol >= 0 && targetCol < headers.length) {
+          const orig = headers[targetCol] || '';
+          // If empty or generic Column_X, fill it; otherwise prefix it
+          if (!orig || orig.trim() === '' || orig.startsWith('Column_')) {
+            headers[targetCol] = foldedLabel.text;
+          } else {
+            // Avoid duplicate prefixing on repeated calls
+            if (!orig.startsWith(foldedLabel.text)) {
+              headers[targetCol] = foldedLabel.text + ' ' + orig;
+            }
+          }
+        }
+      }
 
       // Table-level provenance defaults
       const fileHash = table.sourceFileHash || '';
@@ -192,6 +213,17 @@
         const headerCell = (headerRowCount > 0 && grid[0] && grid[0][c]) ? grid[0][c] : null;
         const sourceRow = headerCell && headerCell.provenance ? headerCell.provenance.rowIndex : (headerRowCount > 0 ? 0 : -1);
         const sourceCell = headerCell && headerCell.provenance ? headerCell.provenance.cellIndex : (headerRowCount > 0 ? c : -1);
+
+        const isFoldedCol = foldedLabel && (c === (foldedLabel.targetCol || 0));
+        const foldedFrom = isFoldedCol ? {
+          sourceFileHash: fileHash,
+          sourcePart: sourcePart,
+          sourceTableIndex: tableIndex,
+          sourceRowIndex: foldedLabel.labelRow,
+          sourceCellIndex: foldedLabel.labelCol,
+          rawText: foldedLabel.text,
+        } : null;
+
         provenance.push({
           csvRow: csvRowIndex,
           csvCol: c,
@@ -202,7 +234,8 @@
           sourceCellIndex: sourceCell,
           rawText: headers[c],
           headerLabel: headers[c],
-          isHeader: true
+          isHeader: true,
+          foldedFrom: foldedFrom
         });
       }
       csvRowIndex++;
@@ -215,6 +248,14 @@
       let nestedCounter = 0; // Running counter across all data rows
 
       for (let r = dataStartRow; r < grid.length; r++) {
+        // Exclude specific rows (e.g. folded label row)
+        if (options && options.excludeRows && options.excludeRows.includes(r)) {
+          continue;
+        }
+        if (foldedLabel && r === foldedLabel.labelRow) {
+          continue;
+        }
+
         const row = grid[r];
         const csvCells = [];
 
@@ -240,7 +281,8 @@
             sourceCellIndex: sourceCell,
             rawText: rawText,
             headerLabel: headers[c] || ('Column_' + (c + 1)),
-            isHeader: false
+            isHeader: false,
+            foldedFrom: null
           });
         }
 

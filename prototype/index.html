@@ -33,10 +33,32 @@
 
     <!-- ─── Navigator ─── -->
     <aside class="navigator" id="navigator">
-      <div class="nav-header">Tables <span id="navCount"></span></div>
-      <div class="nav-list" id="navList">
-        <div class="empty-state" style="min-height:200px">
-          <p>No tables loaded</p>
+      <div class="nav-header">
+        <span>Table Navigator</span>
+        <span id="navCount" class="nav-count-badge"></span>
+      </div>
+
+      <div class="nav-filter-section">
+        <label for="tableFilter" class="nav-label">Filter:</label>
+        <select id="tableFilter" class="nav-select" onchange="app.onFilterChange()">
+          <option value="all" selected>List all</option>
+          <option value="data">Only Tables with data</option>
+        </select>
+        <div class="filter-hint" id="filterHint">>= 2 rows AND >= 2 grid cols</div>
+      </div>
+
+      <div class="nav-selector-section">
+        <label for="tableSelect" class="nav-label">Select Table:</label>
+        <select id="tableSelect" class="nav-select nav-table-dropdown" onchange="app.onTableSelectChange(this.value)">
+          <option value="">-- No table loaded --</option>
+        </select>
+      </div>
+
+      <div class="nav-details" id="navDetails">
+        <div class="table-info-card" id="tableInfoCard">
+          <div class="empty-state" style="min-height:140px; padding:12px;">
+            <p>Load a .docx file to select tables.</p>
+          </div>
         </div>
       </div>
     </aside>
@@ -46,6 +68,9 @@
 
       <!-- Table Controls -->
       <div class="table-controls" id="tableControls" style="display:none">
+        <div class="control-group">
+          <button class="btn btn-auto" id="btnAutoHeader" onclick="app.applyAutoHeader()" title="Apply automatic header/data suggestion (Auto v3)">⚡ Auto</button>
+        </div>
         <div class="control-group">
           <label for="headerRows">Header rows:</label>
           <select id="headerRows">
@@ -59,6 +84,7 @@
           <input type="number" id="dataStart" value="1" min="0" max="100" style="width:60px">
         </div>
         <button class="btn btn-primary" id="btnDownloadCsv" onclick="app.downloadSelectedCsv()">⬇ Download CSV</button>
+        <div class="auto-rule-badge" id="autoRuleBadge" style="display:none"></div>
         <div style="margin-left:auto; font-size:0.78rem; color:var(--text-muted)" id="tableTitle"></div>
       </div>
 
@@ -96,6 +122,7 @@
   <!-- ═══ Scripts ═══ -->
   <script src="js/jszip.min.js"></script>
   <script src="js/docx-table-parser.js"></script>
+  <script src="js/auto-header-v3.js"></script>
   <script src="js/csv-exporter.js"></script>
   <script src="js/app.js"></script>
 

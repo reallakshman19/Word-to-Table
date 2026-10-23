@@ -249,6 +249,27 @@
         if (row.length > colCount) colCount = row.length;
       }
 
+      // ── Row metadata for Auto Header v3 & diagnostics ──────────────
+      const rowMetadata = [];
+      for (let r = 0; r < normalizedGrid.length; r++) {
+        const row = normalizedGrid[r];
+        const sourceCellCount = physicalGrid[r] ? physicalGrid[r].length : row.length;
+        const placeholders = row.filter(c => c.spanned).length;
+        const nonEmpty = row.filter(c => c.text && c.text.trim().length > 0).length;
+        const hasTextInRow = row.some(c => c.hasText);
+        const allBoldInRow = hasTextInRow && row.filter(c => c.hasText).every(c => c.isBold);
+        const isBand = placeholders >= 3 && nonEmpty <= 2;
+        rowMetadata.push({
+          rowIndex: r,
+          sourceCellCount,
+          placeholders,
+          nonEmpty,
+          hasText: hasTextInRow,
+          allBold: allBoldInRow,
+          isBand,
+        });
+      }
+
       // ── Build table object (flat structure for easy consumption) ────
       return {
         physicalIndex,                              // 1-based among all tables (140)
@@ -260,6 +281,7 @@
         hasSpans,
         nestedTableIndices: regEntry.nestedTableIndices,
         grid: normalizedGrid,
+        rowMetadata,
         sourceXml: rawXml,
         sourceFileHash: fileHash,
         sourcePart: 'word/document.xml',
@@ -316,6 +338,9 @@
         text = this._extractCellText(cellEl);
       }
 
+      // ── Bold detection ─────────────────────────────────────────────
+      const boldInfo = this._cellIsBold(cellEl);
+
       // ── Source XML of the cell ─────────────────────────────────────
       const sourceXml = xmlSerializer.serializeToString(cellEl);
 
@@ -327,6 +352,8 @@
         nestedTableIndex,
         hasImage,
         isPlaceholder,
+        isBold: boldInfo.isBold,
+        hasText: boldInfo.hasText,
         provenance: {
           fileHash,
           part: 'word/document.xml',
@@ -374,6 +401,55 @@
       }
 
       return paraTexts.join('\n');
+    }
+
+    /**
+     * Check if a cell contains bold text and whether all non-empty text is bold.
+     *
+     * @param {Element} cellEl — the w:tc element
+     * @returns {{ hasText: boolean, isBold: boolean }}
+     */
+    _cellIsBold(cellEl) {
+      const paragraphs = this._directChildrenByTag(cellEl, 'p');
+      let hasText = false;
+      let allBold = true;
+
+      for (const p of paragraphs) {
+        const runs = this._getRunsInParagraph(p);
+        for (const run of runs) {
+          const runText = this._extractRunText(run).trim();
+          if (runText.length > 0) {
+            hasText = true;
+            if (!this._isRunBold(run)) {
+              allBold = false;
+            }
+          }
+        }
+      }
+
+      return { hasText, isBold: hasText && allBold };
+    }
+
+    /**
+     * Check if a w:r element has bold formatting (w:rPr > w:b).
+     *
+     * @param {Element} runEl — the w:r element
+     * @returns {boolean}
+     */
+    _isRunBold(runEl) {
+      for (const child of runEl.children) {
+        if ((child.localName === 'rPr' || child.nodeName === 'w:rPr') &&
+            (child.namespaceURI === WORD_NS || !child.namespaceURI || child.prefix === 'w')) {
+          for (const rp of child.children) {
+            if ((rp.localName === 'b' || rp.nodeName === 'w:b') &&
+                (rp.namespaceURI === WORD_NS || !rp.namespaceURI || rp.prefix === 'w')) {
+              const val = rp.getAttribute('w:val') || rp.getAttributeNS(WORD_NS, 'val');
+              return val !== '0' && val !== 'false';
+            }
+          }
+        }
+      }
+      return false;
     }
 
     /**

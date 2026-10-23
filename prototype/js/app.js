@@ -1,28 +1,40 @@
 /**
- * app.js — Doc2Table Prototype Application Controller
+ * app.js — Doc2Table Prototype Application Controller (D2T-S1.1 / WBS 4.1.1)
  *
- * Orchestrates file loading, table parsing, navigation, grid/source/CSV
- * display, header row selection, and CSV download with provenance.
+ * Orchestrates:
+ *   1. File loading & SHA-256 computation
+ *   2. Dropdown table selector with stable physical IDs
+ *   3. Filter: "List all" vs "Only Tables with data" (>=2 rows AND >=2 cols)
+ *   4. Auto Header v3 on-click heuristic (Rules 1, 2, 3, 4)
+ *   5. Reversible manual header/data-start editing
+ *   6. Grid/source/CSV/provenance display with label folding (Rule 2)
+ *   7. RFC 4180 CSV export with companion per-cell provenance
  *
- * Depends on: DocxTableParser, CsvExporter (both on window)
+ * Dependencies: DocxTableParser, AutoHeaderV3, CsvExporter (all on window)
  */
 
 (function () {
   'use strict';
 
   // ─── State ───
-  let parseResult = null;   // DocxTableParser result
-  let fileHash = null;      // SHA-256 hex
-  let fileName = null;
-  let selectedTableIdx = -1; // index into parseResult.tables
+  let parseResult = null;            // DocxTableParser result
+  let fileHash = null;               // SHA-256 hex string
+  let fileName = null;               // Original file name
+  let selectedPhysicalIndex = -1;    // 1-based physical index of active table
+  let filterMode = 'all';            // 'all' | 'data'
+  let currentFoldedLabel = null;     // { text, labelRow, labelCol, targetRow, targetCol }
+  let autoRuleFired = null;          // Last suggestion from AutoHeaderV3
 
   // ─── DOM refs ───
   const $ = id => document.getElementById(id);
 
   const fileInput = $('fileInput');
   const fileInfo = $('fileInfo');
-  const navList = $('navList');
   const navCount = $('navCount');
+  const tableFilter = $('tableFilter');
+  const tableSelect = $('tableSelect');
+  const filterHint = $('filterHint');
+  const tableInfoCard = $('tableInfoCard');
   const tableControls = $('tableControls');
   const contentTabs = $('contentTabs');
   const gridPanel = $('gridPanel');
@@ -35,47 +47,61 @@
   const tableTitle = $('tableTitle');
   const headerRowsSelect = $('headerRows');
   const dataStartInput = $('dataStart');
+  const btnAutoHeader = $('btnAutoHeader');
+  const autoRuleBadge = $('autoRuleBadge');
+  const btnDownloadCsv = $('btnDownloadCsv');
 
-  // ─── File Input / Drop ───
+  // ─── File Input / Drag & Drop ───
 
   fileInput.addEventListener('change', e => {
     if (e.target.files.length) handleFile(e.target.files[0]);
   });
 
-  dropZone.addEventListener('dragover', e => {
-    e.preventDefault();
-    dropZone.classList.add('drag-over');
-  });
+  if (dropZone) {
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
 
-  dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('drag-over');
-  });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('drag-over');
+    });
 
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault();
-    dropZone.classList.remove('drag-over');
-    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
-  });
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+  }
 
-  // Also allow drop on the whole page
   document.body.addEventListener('dragover', e => e.preventDefault());
   document.body.addEventListener('drop', e => {
     e.preventDefault();
     if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
   });
 
-  // ─── Header row / data start change ───
+  // ─── Header row / data start change (Independent Manual Controls) ───
+
   headerRowsSelect.addEventListener('change', () => {
-    // Auto-adjust data start to match header rows if user hasn't manually changed it
     const hr = parseInt(headerRowsSelect.value);
     if (parseInt(dataStartInput.value) < hr) {
       dataStartInput.value = hr;
     }
-    if (selectedTableIdx >= 0) renderSelectedTable();
+    // If user changed away from rule 2 header count, clear folded label
+    if (currentFoldedLabel && hr !== 1) {
+      currentFoldedLabel = null;
+    }
+    if (autoRuleFired) {
+      autoRuleBadge.textContent = autoRuleFired.ruleName + ' (manually edited)';
+    }
+    if (selectedPhysicalIndex > 0) renderSelectedTable();
   });
 
   dataStartInput.addEventListener('change', () => {
-    if (selectedTableIdx >= 0) renderSelectedTable();
+    if (autoRuleFired) {
+      autoRuleBadge.textContent = autoRuleFired.ruleName + ' (manually edited)';
+    }
+    if (selectedPhysicalIndex > 0) renderSelectedTable();
   });
 
   // ─── File Processing ───
@@ -104,21 +130,37 @@
 
       setStatus('Parsing tables…');
 
-      // Parse
+      // Parse using DocxTableParser
       const parser = new window.DocxTableParser();
       parseResult = await parser.parse(buffer, fileHash);
 
-      // Render
-      renderNavigator();
+      // Reset state
+      selectedPhysicalIndex = -1;
+      currentFoldedLabel = null;
+      autoRuleFired = null;
+      autoRuleBadge.style.display = 'none';
+
+      // Update Filter & Table Selector dropdowns
+      populateTableDropdown();
       updateStats();
 
-      if (parseResult.tables.length > 0) {
-        selectTable(0);
+      // Automatically select first available table if present
+      const filtered = getFilteredTables();
+      if (filtered.length > 0) {
+        selectTableByPhysicalIndex(filtered[0].physicalIndex);
       } else {
-        showNoTablesState();
+        if (parseResult.tables.length > 0) {
+          // Switch to all if data filter is empty
+          filterMode = 'all';
+          tableFilter.value = 'all';
+          populateTableDropdown();
+          selectTableByPhysicalIndex(parseResult.tables[0].physicalIndex);
+        } else {
+          showNoTablesState();
+        }
       }
 
-      setStatus(`Done — ${parseResult.totalCount} tables found`);
+      setStatus(`Done — ${parseResult.totalCount} physical tables found`);
     } catch (err) {
       console.error(err);
       setStatus('Error: ' + err.message, true);
@@ -127,73 +169,209 @@
     }
   }
 
-  // ─── Navigator ───
+  // ─── Filter & Dropdown Selector ───
 
-  function renderNavigator() {
-    if (!parseResult) return;
-    const tables = parseResult.tables;
+  /**
+   * Filter predicate:
+   * 'all'  -> all tables
+   * 'data' -> rowCount >= 2 AND colCount >= 2 (no content test)
+   */
+  function getFilteredTables() {
+    if (!parseResult || !parseResult.tables) return [];
+    if (filterMode === 'data') {
+      return parseResult.tables.filter(t => t.rowCount >= 2 && t.colCount >= 2);
+    }
+    return parseResult.tables;
+  }
 
-    navCount.textContent = `(${tables.length})`;
+  function onFilterChange() {
+    filterMode = tableFilter.value;
+    populateTableDropdown();
 
-    if (tables.length === 0) {
-      navList.innerHTML = '<div class="empty-state" style="min-height:200px">' +
-        '<p>No native tables found</p></div>';
+    // Check if current selection survived filtering
+    const filtered = getFilteredTables();
+    const stillVisible = filtered.some(t => t.physicalIndex === selectedPhysicalIndex);
+
+    if (stillVisible) {
+      // Retain current selection
+      tableSelect.value = String(selectedPhysicalIndex);
+    } else {
+      // Explicitly clear selection/exports and ask for a visible table
+      clearSelection(
+        `Selected table #${selectedPhysicalIndex} is hidden by the active filter. Please select a visible table from the dropdown above.`
+      );
+    }
+  }
+
+  function populateTableDropdown() {
+    if (!parseResult) {
+      tableSelect.innerHTML = '<option value="">-- No file loaded --</option>';
+      navCount.textContent = '';
       return;
     }
 
-    let html = '';
-    for (let i = 0; i < tables.length; i++) {
-      const t = tables[i];
-      const isNested = t.isNested;
-      const cls = isNested ? 'nav-item nested' : 'nav-item';
+    const filtered = getFilteredTables();
+    const totalCount = parseResult.tables.length;
 
-      let badges = '';
-      if (isNested) badges += '<span class="badge-sm badge-nested">nested</span>';
-      if (t.hasSpans) badges += '<span class="badge-sm badge-spans">spans</span>';
-
-      const title = isNested
-        ? `↳ Nested in Table ${t.parentTableIndex}`
-        : `Table ${t.bodyIndex}`;
-
-      html += `<div class="${cls}" data-idx="${i}" onclick="app.selectTable(${i})">
-        <div class="nav-title">${esc(title)}</div>
-        <div class="nav-meta">${t.rowCount} rows × ${t.colCount} cols · Physical #${t.physicalIndex}</div>
-        ${badges ? '<div class="nav-badges">' + badges + '</div>' : ''}
-      </div>`;
+    if (filterMode === 'data') {
+      navCount.textContent = `(${filtered.length}/${totalCount})`;
+      if (filterHint) filterHint.textContent = `Filtered: >= 2 rows AND >= 2 grid cols (${filtered.length} tables)`;
+    } else {
+      navCount.textContent = `(${totalCount})`;
+      if (filterHint) filterHint.textContent = `Showing all ${totalCount} physical tables`;
     }
 
-    navList.innerHTML = html;
+    if (filtered.length === 0) {
+      tableSelect.innerHTML = '<option value="">-- No matching tables --</option>';
+      tableInfoCard.innerHTML = '<p class="text-muted">No tables match the selected filter.</p>';
+      return;
+    }
+
+    let html = '<option value="">-- Select a table --</option>';
+    for (const t of filtered) {
+      const isNested = t.isNested;
+      const prefix = isNested ? `↳ #${t.physicalIndex} (Nested in #${t.parentTableIndex})` : `#${t.physicalIndex} Table ${t.bodyIndex}`;
+      const dim = `${t.rowCount}×${t.colCount}`;
+      const spanFlag = t.hasSpans ? ' [spans]' : '';
+      html += `<option value="${t.physicalIndex}">${esc(prefix)} — ${dim}${spanFlag}</option>`;
+    }
+
+    tableSelect.innerHTML = html;
+
+    if (selectedPhysicalIndex > 0) {
+      tableSelect.value = String(selectedPhysicalIndex);
+    }
   }
 
-  function selectTable(idx) {
-    if (!parseResult || idx < 0 || idx >= parseResult.tables.length) return;
-    selectedTableIdx = idx;
+  function onTableSelectChange(val) {
+    if (!val) {
+      clearSelection('Please select a table from the dropdown above.');
+      return;
+    }
+    const physIdx = parseInt(val, 10);
+    selectTableByPhysicalIndex(physIdx);
+  }
 
-    // Update nav highlight
-    navList.querySelectorAll('.nav-item').forEach((el, i) => {
-      el.classList.toggle('active', i === idx);
-    });
+  function selectTableByPhysicalIndex(physIdx) {
+    if (!parseResult) return;
+    const t = parseResult.tables.find(x => x.physicalIndex === physIdx);
+    if (!t) return;
+
+    selectedPhysicalIndex = physIdx;
+    tableSelect.value = String(physIdx);
+
+    // Reset auto-header suggestions and folded label on table switch
+    currentFoldedLabel = null;
+    autoRuleFired = null;
+    autoRuleBadge.style.display = 'none';
 
     // Show controls
     tableControls.style.display = '';
     contentTabs.style.display = '';
+    if (btnDownloadCsv) btnDownloadCsv.disabled = false;
 
-    const t = parseResult.tables[idx];
+    // Update table info card
+    renderTableInfoCard(t);
+
     const label = t.isNested
-      ? `Nested table (physical #${t.physicalIndex}) inside Table ${t.parentTableIndex}`
-      : `Table ${t.bodyIndex} (physical #${t.physicalIndex})`;
-    tableTitle.textContent = label + ` — ${t.rowCount}×${t.colCount}`;
+      ? `Nested table #${t.physicalIndex} (inside Table #${t.parentTableIndex})`
+      : `Table ${t.bodyIndex} (Physical #${t.physicalIndex})`;
+    tableTitle.textContent = `${label} — ${t.rowCount}×${t.colCount}`;
 
     // Set data start max
     dataStartInput.max = t.rowCount;
 
+    // Default header rows & data start (defaults to 1 and 1 if table has >= 2 rows, else 0 and 0)
+    if (t.rowCount >= 2) {
+      headerRowsSelect.value = '1';
+      dataStartInput.value = '1';
+    } else {
+      headerRowsSelect.value = '0';
+      dataStartInput.value = '0';
+    }
+
     renderSelectedTable();
   }
 
+  function clearSelection(message) {
+    selectedPhysicalIndex = -1;
+    tableSelect.value = '';
+    currentFoldedLabel = null;
+    autoRuleFired = null;
+    autoRuleBadge.style.display = 'none';
+
+    tableControls.style.display = 'none';
+    contentTabs.style.display = 'none';
+    if (btnDownloadCsv) btnDownloadCsv.disabled = true;
+
+    tableInfoCard.innerHTML = `<p class="text-muted">${esc(message || 'No table selected')}</p>`;
+    gridPanel.innerHTML = `<div class="notice notice-warn">${esc(message || 'No table selected')}</div>` +
+      '<div class="empty-state"><p>Choose a table from the dropdown above to inspect.</p></div>';
+    sourcePanel.innerHTML = '';
+    csvPanel.innerHTML = '';
+    provenancePanel.innerHTML = '';
+  }
+
+  function renderTableInfoCard(t) {
+    let badges = '';
+    if (t.isNested) badges += '<span class="badge-sm badge-nested">nested</span> ';
+    if (t.hasSpans) badges += '<span class="badge-sm badge-spans">spans</span> ';
+
+    tableInfoCard.innerHTML = `
+      <h4>Physical Table #${t.physicalIndex}</h4>
+      <div class="info-row"><span class="label">Type:</span><span class="val">${t.isNested ? 'Nested in #' + t.parentTableIndex : 'Body Table ' + t.bodyIndex}</span></div>
+      <div class="info-row"><span class="label">Dimensions:</span><span class="val">${t.rowCount} rows × ${t.colCount} cols</span></div>
+      <div class="info-row"><span class="label">Spans:</span><span class="val">${t.hasSpans ? 'Present' : 'None'}</span></div>
+      ${t.nestedTableIndices && t.nestedTableIndices.length > 0 ? `<div class="info-row"><span class="label">Contains Nested:</span><span class="val">#${t.nestedTableIndices.join(', #')}</span></div>` : ''}
+      ${badges ? `<div style="margin-top:6px">${badges}</div>` : ''}
+    `;
+  }
+
+  // ─── Auto Header v3 ───
+
+  function applyAutoHeader() {
+    if (selectedPhysicalIndex <= 0 || !parseResult) return;
+    const t = parseResult.tables.find(x => x.physicalIndex === selectedPhysicalIndex);
+    if (!t) return;
+
+    // Call AutoHeaderV3 heuristic (pure, idempotent)
+    const suggestion = window.AutoHeaderV3.suggest(t);
+    autoRuleFired = suggestion;
+
+    if (suggestion.warning) {
+      // Show warning and keep prior selection
+      autoRuleBadge.style.display = '';
+      autoRuleBadge.className = 'auto-rule-badge auto-rule-warn';
+      autoRuleBadge.textContent = '⚠ ' + suggestion.ruleExplanation;
+      return;
+    }
+
+    // Apply header and data start suggestions
+    headerRowsSelect.value = String(suggestion.headerRowCount);
+    dataStartInput.value = String(suggestion.dataStartRow);
+    currentFoldedLabel = suggestion.foldedLabel;
+
+    // Display fired rule explanation
+    autoRuleBadge.style.display = '';
+    autoRuleBadge.className = 'auto-rule-badge';
+    autoRuleBadge.textContent = '⚡ ' + suggestion.ruleExplanation;
+
+    renderSelectedTable();
+  }
+
+  // ─── Table Rendering ───
+
+  function getActiveTable() {
+    if (!parseResult || selectedPhysicalIndex <= 0) return null;
+    return parseResult.tables.find(x => x.physicalIndex === selectedPhysicalIndex) || null;
+  }
+
   function renderSelectedTable() {
-    const t = parseResult.tables[selectedTableIdx];
-    const headerRows = parseInt(headerRowsSelect.value);
-    const dataStart = Math.max(parseInt(dataStartInput.value) || 0, 0);
+    const t = getActiveTable();
+    if (!t) return;
+
+    const headerRows = parseInt(headerRowsSelect.value, 10);
+    const dataStart = Math.max(parseInt(dataStartInput.value, 10) || 0, 0);
 
     renderGrid(t, headerRows, dataStart);
     renderSource(t);
@@ -212,24 +390,36 @@
 
     let html = '<div class="grid-container"><table class="data-grid">';
 
-    // Render all rows, visually marking header rows
     for (let r = 0; r < grid.length; r++) {
       const row = grid[r];
       const isHeader = r < headerRows;
-      const isBeforeData = r < dataStart && !isHeader;
+      const isFoldedLabelRow = currentFoldedLabel && r === currentFoldedLabel.labelRow;
 
       if (r === 0) html += '<tbody>';
 
-      const rowCls = isHeader ? 'header-row' : '';
+      let rowCls = '';
+      if (isHeader) rowCls = 'header-row';
+      else if (isFoldedLabelRow) rowCls = 'label-row';
+
       html += `<tr class="${rowCls}">`;
-      html += `<td class="row-idx">${r}</td>`;
+      html += `<td class="row-idx">${isFoldedLabelRow ? '🏷 ' + r : r}</td>`;
 
       for (let c = 0; c < row.length; c++) {
         const cell = row[c];
         let cls = '';
         let content = '';
 
-        if (cell.spanned) {
+        const isFoldedTargetCell = isHeader && currentFoldedLabel &&
+          r === currentFoldedLabel.targetRow && c === currentFoldedLabel.targetCol;
+
+        if (isFoldedTargetCell) {
+          cls = 'folded-header-cell';
+          const origText = cell && cell.text ? String(cell.text).trim() : '';
+          const foldedVal = origText ? `${currentFoldedLabel.text} ${origText}` : currentFoldedLabel.text;
+          content = `<strong>${esc(foldedVal)}</strong> <small title="Folded from Row ${currentFoldedLabel.labelRow}">[folded: ${esc(currentFoldedLabel.text)}]</small>`;
+        } else if (isFoldedLabelRow) {
+          content = `<em>${esc(cell.text || '')}</em> <small>[label row - excluded from data]</small>`;
+        } else if (cell.spanned) {
           cls = 'spanned-cell';
           content = '⬅ span';
         } else if (cell.hasImage) {
@@ -251,13 +441,16 @@
 
     html += '</tbody></table></div>';
 
-    // Header/data indicators
+    // Header/data indicator banners
     let indicators = '';
-    if (headerRows > 0) {
-      indicators += `<div class="notice notice-info">Header rows: 0–${headerRows - 1}. `;
-      indicators += `Data starts at row ${dataStart}.</div>`;
+    if (currentFoldedLabel) {
+      indicators += `<div class="notice notice-info">` +
+        `<strong>Rule 2 Folded Label:</strong> "${esc(currentFoldedLabel.text)}" from row ${currentFoldedLabel.labelRow} folded into header cell 0. ` +
+        `Row ${currentFoldedLabel.labelRow} excluded from data projection. Data starts at row ${dataStart}.</div>`;
+    } else if (headerRows > 0) {
+      indicators += `<div class="notice notice-info">Header rows: 0–${headerRows - 1}. Data starts at row ${dataStart}.</div>`;
     } else {
-      indicators += '<div class="notice notice-info">No header rows selected. All rows treated as data.</div>';
+      indicators += '<div class="notice notice-info">No header rows selected (Rule 4 / manual). All rows treated as data from row 0.</div>';
     }
 
     gridPanel.innerHTML = indicators + html;
@@ -267,7 +460,6 @@
 
   function renderSource(table) {
     const xml = table.sourceXml || '(source not available)';
-    // Basic syntax highlighting
     const highlighted = esc(xml)
       .replace(/(&lt;\/?)([\w:]+)/g, '$1<span class="tag">$2</span>')
       .replace(/([\w:]+)(=)/g, '<span class="attr">$1</span>$2')
@@ -280,7 +472,8 @@
 
   function renderCsvPreview(table, headerRows, dataStart) {
     const exporter = new window.CsvExporter();
-    const { csv } = exporter.exportTable(table, headerRows, dataStart);
+    const options = { foldedLabel: currentFoldedLabel };
+    const { csv } = exporter.exportTable(table, headerRows, dataStart, options);
 
     const notice = '<div class="notice notice-warn">' +
       '⚠ Spreadsheet programs may reinterpret leading-zero strings (e.g. "031" → 31). ' +
@@ -294,29 +487,36 @@
 
   function renderProvenance(table, headerRows, dataStart) {
     const exporter = new window.CsvExporter();
-    const { provenance } = exporter.exportTable(table, headerRows, dataStart);
+    const options = { foldedLabel: currentFoldedLabel };
+    const { provenance } = exporter.exportTable(table, headerRows, dataStart, options);
 
-    let html = '<div class="notice notice-info">Every CSV cell has a provenance record ' +
+    let html = '<div class="notice notice-info">Every CSV cell has a companion provenance record ' +
       'linking it to the original file hash, XML part, table, row, and cell index.</div>';
 
     html += '<div style="overflow:auto; max-height:calc(100vh - 300px)">';
     html += '<table class="provenance-table"><thead><tr>' +
       '<th>CSV Row</th><th>CSV Col</th><th>Header</th><th>Raw Text</th>' +
       '<th>Is Header</th><th>Source Table</th><th>Source Row</th><th>Source Cell</th>' +
-      '<th>File Hash</th><th>Part</th>' +
+      '<th>Folded From (Rule 2)</th><th>File Hash</th><th>Part</th>' +
       '</tr></thead><tbody>';
 
     for (const p of provenance) {
+      let foldedInfo = '—';
+      if (p.foldedFrom) {
+        foldedInfo = `<span style="color:var(--green)">Row ${p.foldedFrom.sourceRowIndex}, Cell ${p.foldedFrom.sourceCellIndex} ("${esc(p.foldedFrom.rawText)}")</span>`;
+      }
+
       html += '<tr>' +
         `<td>${p.csvRow}</td>` +
         `<td>${p.csvCol}</td>` +
         `<td>${esc(p.headerLabel)}</td>` +
-        `<td class="mono">${esc(truncate(p.rawText, 60))}</td>` +
+        `<td class="mono">${esc(truncate(p.rawText, 50))}</td>` +
         `<td>${p.isHeader ? '✓' : ''}</td>` +
-        `<td>${p.sourceTableIndex}</td>` +
+        `<td>#${p.sourceTableIndex}</td>` +
         `<td>${p.sourceRowIndex}</td>` +
         `<td>${p.sourceCellIndex}</td>` +
-        `<td class="mono">${p.sourceFileHash ? p.sourceFileHash.substring(0, 12) + '…' : '—'}</td>` +
+        `<td>${foldedInfo}</td>` +
+        `<td class="mono">${p.sourceFileHash ? p.sourceFileHash.substring(0, 10) + '…' : '—'}</td>` +
         `<td>${esc(p.sourcePart)}</td>` +
         '</tr>';
     }
@@ -331,7 +531,6 @@
     tableControls.style.display = 'none';
     contentTabs.style.display = 'none';
 
-    // Check if document has images (screenshot-only doc)
     if (parseResult && parseResult.imageCount > 0) {
       gridPanel.innerHTML = `<div class="image-doc-notice">
         <h3>⚠ No native tables found</h3>
@@ -364,12 +563,13 @@
   // ─── CSV Download ───
 
   function downloadSelectedCsv() {
-    if (selectedTableIdx < 0 || !parseResult) return;
-    const t = parseResult.tables[selectedTableIdx];
-    const headerRows = parseInt(headerRowsSelect.value);
-    const dataStart = Math.max(parseInt(dataStartInput.value) || 0, 0);
+    const t = getActiveTable();
+    if (!t || !parseResult) return;
+    const headerRows = parseInt(headerRowsSelect.value, 10);
+    const dataStart = Math.max(parseInt(dataStartInput.value, 10) || 0, 0);
     const exporter = new window.CsvExporter();
-    const { csv } = exporter.exportTable(t, headerRows, dataStart);
+    const options = { foldedLabel: currentFoldedLabel };
+    const { csv } = exporter.exportTable(t, headerRows, dataStart, options);
 
     const safeName = (fileName || 'table').replace(/\.docx$/i, '');
     const csvName = `${safeName}_table${t.physicalIndex}_h${headerRows}.csv`;
@@ -407,9 +607,12 @@
   // ─── Public API ───
 
   window.app = {
-    selectTable,
+    onFilterChange,
+    onTableSelectChange,
+    selectTableByPhysicalIndex,
+    applyAutoHeader,
     switchTab,
-    downloadSelectedCsv
+    downloadSelectedCsv,
   };
 
 })();
