@@ -46,14 +46,30 @@ jobs:
           sleep 2
           CHROME="$(command -v google-chrome || command -v chromium || true)"
           if [ -z "$CHROME" ]; then echo 'Chrome/Chromium unavailable'; exit 1; fi
-          timeout 70 "$CHROME" --headless --no-sandbox --disable-dev-shm-usage --disable-gpu --virtual-time-budget=25000 \
-            --dump-dom http://127.0.0.1:8765/tests/browser_harness.html >/tmp/v31-browser-dom.html 2>/tmp/v31-browser-stderr.txt
-          grep -q '<pre id="test-result">PASS: Browser DOCX extraction' /tmp/v31-browser-dom.html || {
-            grep -o '<pre id="test-result">FAIL:[^<]*' /tmp/v31-browser-dom.html || true
-            tail -50 /tmp/v31-browser-stderr.txt
+          # A headless instance may return while a nested iframe still says
+          # RUNNING. Retry only that incomplete observation, never a true FAIL.
+          COMPLETE=0
+          for attempt in 1 2 3; do
+            timeout 100 "$CHROME" --headless --no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run \
+              --user-data-dir="/tmp/v31-chrome-$attempt" --virtual-time-budget=70000 \
+              --dump-dom http://127.0.0.1:8765/tests/browser_harness.html \
+              >/tmp/v31-browser-dom.html 2>/tmp/v31-browser-stderr.txt || true
+            if grep -q '<pre id="test-result">FAIL:' /tmp/v31-browser-dom.html; then
+              grep -o '<pre id="test-result">FAIL:[^<]*' /tmp/v31-browser-dom.html
+              exit 1
+            fi
+            if grep -q '<pre id="test-result">PASS: Browser DOCX extraction' /tmp/v31-browser-dom.html; then
+              grep -o '<pre id="test-result">PASS: Browser DOCX extraction[^<]*' /tmp/v31-browser-dom.html
+              COMPLETE=1
+              break
+            fi
+            echo "Chromium rendered no completed verdict (attempt $attempt); retrying."
+          done
+          if [ "$COMPLETE" -ne 1 ]; then
+            echo 'No real rendered PASS marker after three attempts'
+            grep -o '<pre id="test-result">[^<]*' /tmp/v31-browser-dom.html || true
             exit 1
-          }
-          grep -o '<pre id="test-result">PASS: Browser DOCX extraction[^<]*' /tmp/v31-browser-dom.html
+          fi
       - name: Retain public R5 fixture for private local comparison
         if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
