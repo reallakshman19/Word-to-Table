@@ -2,6 +2,30 @@
 
 Flexible native Word table extraction on GitHub Pages with source-linked raw leftovers.
 
+## SCTL-P1.1 — Source Traceability tab (DRAFT / OWNER TRIAL PENDING)
+
+This additive fourth top-level workspace is separate from Tables, CAPS and Word/HTML diff. It **does not repair conversions** or claim whole-source coverage. The base application and the Source Traceability viewer stay independent when switching workspaces.
+
+**One-command launch:** Run `start-d2t.cmd` at the repository root. Browser-local secure-origin SHA-256 and bundled JSZip are used; no document is uploaded or persisted by SCTL.
+
+**Five-step Owner/OTM demo:**
+
+1. Launch and confirm **Tables | CAPS | Word/HTML diff | Source Traceability** all appear. Load a DOCX into Tables if you want to inspect state retention.
+2. Open **Source Traceability**. Expect **NO VERIFIED SOURCE LOADED** with no Notes page shown.
+3. Select the *private* `SCTL_P1_Missing_Source_Lens_R5_Private_Prototype.zip` (1,888,155 bytes; SHA-256 `8b5e5c8f3184f6a68dab4888ee38165473345cb37daa9a34d122532c6b1d1805`). It is **not bundled in the GitHub Pages/public repository**. The browser rejects any other ZIP, including same-size wrong hashes.
+4. In the isolated offline report, click the highlighted Notes Table #2 to inspect original paragraphs, source occurrence ID, and target correspondence/absence evidence; navigate and zoom. **WORD_FIDELITY_NOT_VERIFIED** remains visible because its LibreOffice-rendered preview is not an authenticated Word page.
+5. Switch to the other three tabs and back. Verify the original data/selection and the imported report remain visible. No converter or diff workflow was modified.
+
+**Regression:** Hosted PR-only workflow `.github/workflows/xy-checks.yml` runs `tests/sctl_p11_browser.cjs` against the staged Pages build, in addition to existing XY, CAPS and staging checks. It exercises empty state, synthetic incorrect inputs, equal-size incorrect hash, actual synthetic DOCX state retention, and no upload requests. On a trusted machine with the actual private ZIP, optionally run:
+
+```bash
+SCTL_PRIVATE_ZIP="/absolute/private/path/SCTL_P1_Missing_Source_Lens_R5_Private_Prototype.zip" node tests/sctl_p11_browser.cjs
+```
+
+(Requires `npm install --no-save playwright@1.62.1` and `npx playwright install chrome`. Do **not** set `SCTL_PRIVATE_ZIP` in public CI.) Original R5 files stay outside `prototype/` and generated Pages assets. Public GitHub stores only application code and expected hashes. No authenticated Word PDF, independent fidelity verdict or Owner acceptance is claimed.
+
+---
+
 ## Quick Start Launcher
 
 To run the prototype locally:

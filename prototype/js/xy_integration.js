@@ -6,7 +6,7 @@ const XYIntegration=(()=>{
     function view(name){
         document.querySelector('.app-body').style.display=name==='tables'?'':'none';
         document.body.classList.toggle('caps-mode',name==='caps');
-        for(const id of ['diffhtml','caps'])document.getElementById('tab-'+id).hidden=name!==id;
+        for(const id of ['diffhtml','caps','trace'])document.getElementById('tab-'+id).hidden=name!==id;
         document.querySelectorAll('.xy-tab').forEach(b=>b.setAttribute('aria-selected',String(b.id==='xy-tab-'+name)));
     }
     function generated(){return (mode==='LAST_BATCH'?batch:selection)?.html||'';}
@@ -72,7 +72,7 @@ const XYIntegration=(()=>{
     }
     function init(){
         const nav=document.createElement('nav');nav.className='xy-tabs';
-        nav.innerHTML=[['tables','Tables'],['caps','CAPS'],['diffhtml','Word/HTML diff']].map(([name,label],i)=>`<button class="xy-tab" id="xy-tab-${name}" aria-selected="${i===0}">${label}</button>`).join('');
+        nav.innerHTML=[['tables','Tables'],['caps','CAPS'],['diffhtml','Word/HTML diff'],['trace','Source Traceability']].map(([name,label],i)=>`<button class="xy-tab" id="xy-tab-${name}" aria-selected="${i===0}">${label}</button>`).join('');
         document.querySelector('.status-bar').after(nav);
         const y=document.createElement('section');y.id='tab-diffhtml';y.hidden=true;
         y.innerHTML='<div class="xy-panel"><div class="xy-workspace-header"><div><span class="xy-eyebrow">DOC2TABLE · WORD EVIDENCE</span><h2>Trace the source. Review the result.</h2><p>Compare your original Word document with the actual HTML output.</p></div><div class="xy-workspace-actions">'+
@@ -80,7 +80,8 @@ const XYIntegration=(()=>{
             '<label class="xy-upload-button">＋ Target HTML<input id="xy-upload" class="xy-file-input" type="file" accept=".html,.htm"></label></div></div>'+
             '<p id="xy-message">Open a DOCX in Tables, then choose the output to inspect.</p></div><div id="xy-audit"></div>';
         nav.after(y);const x=document.createElement('section');x.id='tab-caps';x.hidden=true;y.after(x);
-        ['tables','diffhtml','caps'].forEach(name=>document.getElementById('xy-tab-'+name).onclick=()=>view(name));
+        const trace=document.createElement('section');trace.id='tab-trace';trace.hidden=true;x.after(trace);
+        ['tables','diffhtml','caps','trace'].forEach(name=>document.getElementById('xy-tab-'+name).onclick=()=>view(name));
         document.getElementById('xy-run-selected').onclick=()=>run('CURRENT_SELECTION');
         document.getElementById('xy-run-batch').onclick=()=>run('LAST_BATCH');
         document.getElementById('xy-upload').onchange=e=>upload(e.target.files[0]);

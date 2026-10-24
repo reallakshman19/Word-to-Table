@@ -1,0 +1,17 @@
+/* SCTL-P1.1: scoped additive UI. Existing Tables, CAPS, and Word/HTML diff styles untouched. */
+#tab-trace { background: var(--bg, #0c1018); color: var(--text, #dce7f7); min-height: 75vh; }
+#tab-trace[hidden] { display: none !important; }
+#tab-trace .sctl-shell { padding: 22px; max-width: 1700px; margin: 0 auto; }
+#tab-trace .sctl-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:16px; }
+#tab-trace .sctl-heading h2 { color:var(--text-bright, #eef4ff); margin:8px 0; }
+#tab-trace .sctl-heading p, #tab-trace .sctl-guidance { color:var(--text-muted, #9aacc4); font-size:13px; line-height:1.55; }
+#tab-trace .sctl-pick { cursor:pointer; padding:12px 16px; border-radius:6px; border:1px solid #54779f; background:#17273e; color:#d6ebff; font-weight:700; }
+#tab-trace .sctl-pick:hover { background:#264566; }
+#tab-trace .sctl-pick input { position:absolute; width:1px; height:1px; opacity:0; }
+#tab-trace .sctl-status { border:1px solid #51627a; border-radius:6px; background:#1a263a; padding:12px 14px; margin:16px 0 8px; font:600 13px system-ui; }
+#tab-trace .sctl-status[data-status=error] { border-color:#bc6d6d; background:#42252b; color:#ffe8e8; }
+#tab-trace .sctl-status[data-status=verified] { border-color:#479481; color:#c5f0e6; }
+#tab-trace .sctl-summary { border-left:4px solid #ffb627; padding:12px; color:#f8deb0; background:#32281d; margin:16px 0; font-size:13px; line-height:1.5; }
+#tab-trace .sctl-summary[hidden], #tab-trace #sctl-frame[hidden] { display:none !important; }
+#tab-trace #sctl-frame { display:block; width:100%; min-height:790px; height:calc(100vh - 270px); border:1px solid #455b76; background:#f1f4f8; border-radius:7px; }
+@media(max-width:700px){ #tab-trace .sctl-shell{padding:12px} #tab-trace #sctl-frame{min-height:700px;height:90vh} }
