@@ -1852,3 +1852,21 @@ footer#status-bar span {
     font-size: 1rem;
     line-height: 1.6;
 }
+
+/* v3.1 traceability QA: client-side responsive, no CDN */
+.audit-upload{display:inline-flex;align-items:center;gap:6px;font-size:12px}
+.audit-upload input{max-width:160px}
+.audit-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;align-items:center}
+.audit-actions button,.audit-actions input,.audit-actions select{border:1px solid var(--border-color,#475569);border-radius:7px;padding:8px;color:var(--text-primary,#e2e8f0);background:var(--bg-secondary,#1e293b)}
+.audit-actions input{min-width:180px}
+.audit-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:14px 0}
+.audit-metric{display:flex;flex-direction:column;gap:5px;padding:12px;border:1px solid #475569;border-radius:9px}
+.audit-metric strong{font-size:22px;font-variant-numeric:tabular-nums}
+.audit-muted{opacity:.8;overflow-wrap:anywhere}
+.audit-warning{color:#fbbf24;font-weight:600}
+.audit-record{padding:14px;margin:10px 0;border:1px solid #475569;border-radius:9px}
+.audit-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin:10px 0}
+.audit-pair>div{min-width:0}
+.audit-pair pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0}
+.audit-diagnostics{padding:10px;border:1px solid #b45309;border-radius:8px}
+@media(max-width:700px){.audit-pair{grid-template-columns:1fr}}

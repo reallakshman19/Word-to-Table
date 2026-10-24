@@ -411,7 +411,8 @@ class DocxParser {
                     csv,
                     source: 'Smart',
                     type: 'Heuristic',
-                    tableIndex: tableCount
+                    tableIndex: tableCount,
+                    headerRow: headerRow
                 });
 
                 this.log('INFO', `Table #${tableCount}: ${dataRows.length}×${headers.length} | ${confidence} | "${tableName}" | Page ${pageNumber}`);

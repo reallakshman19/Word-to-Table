@@ -7,8 +7,12 @@ const appSettings = {
     enableValidator: true,
     debugMode: false,
     robustParsing: false,
-    autoApprove: false
+    autoApprove: false,
+    normalizeWhitespace: true,
+    caseInsensitive: true
 };
+
+const CONFIG_DEFAULTS = Object.freeze({...appSettings});
 
 // settings_tab.js — Application configuration
 
@@ -25,7 +29,7 @@ function renderSettingsTab() {
         <div class="settings-container">
             <!-- Header -->
             <div class="settings-header-banner">
-                <h2>Settings</h2>
+                <h2>Config</h2>
                 <p>Configure extraction rules, application behavior, and maintenance tools.</p>
             </div>
 
@@ -154,6 +158,8 @@ function renderSettingsTab() {
         </div>
     `;
 
+        renderQaConfigExtension(container);
+
         // Initialize Validator UI (Re-attach to new DOM)
         if (typeof window.validator !== 'undefined') {
             // We need to make sure validator renders into our new #validator-rules-target
@@ -175,6 +181,7 @@ function toggleSetting(key) {
 
         // Persist to localStorage if desired (optional)
         localStorage.setItem('appSettings', JSON.stringify(appSettings));
+        localStorage.setItem('docxAppConfig', JSON.stringify(appSettings));
 
         // Update UI immediately (e.g. status icons)
         if (typeof updateStatusBar === 'function') {
@@ -183,27 +190,74 @@ function toggleSetting(key) {
     }
 }
 
-function loadSettings() {
-    const saved = localStorage.getItem('appSettings');
-    if (saved) {
-        try {
-            const parsed = JSON.parse(saved);
-            Object.assign(appSettings, parsed);
-        } catch (e) {
-            console.error("Failed to load settings", e);
-        }
+function validateIncomingConfig(candidate) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate))
+        throw new Error('Config must be an object');
+    const clean={};
+    for (const [key,value] of Object.entries(candidate)) {
+        if (!(key in CONFIG_DEFAULTS)) throw new Error('Unsupported config key: '+key);
+        if (typeof value !== typeof CONFIG_DEFAULTS[key]) throw new Error('Wrong type for '+key);
+        clean[key]=value;
     }
+    return clean;
 }
-
+function loadSettings() {
+    try {
+        const newer=localStorage.getItem('docxAppConfig');
+        const legacy=localStorage.getItem('appSettings');
+        if (newer || legacy) {
+            Object.assign(appSettings,validateIncomingConfig(JSON.parse(newer || legacy)));
+            if (!newer) localStorage.setItem('docxAppConfig',JSON.stringify(appSettings));
+        }
+    } catch(e) { console.warn('Invalid saved Config; defaults retained:',e); }
+}
+function renderQaConfigExtension(container) {
+    const card=document.createElement('section'); card.className='settings-card full-width';
+    const body=document.createElement('div'); body.className='card-body';
+    const title=document.createElement('h3');title.textContent='Diff & QA Rules';card.appendChild(title);
+    [['normalizeWhitespace','Normalize whitespace in candidate matching'],
+     ['caseInsensitive','Ignore case in candidate matching']].forEach(([key,label])=>{
+        const row=document.createElement('label');row.className='setting-item';
+        const control=document.createElement('input');control.type='checkbox';control.checked=appSettings[key];
+        control.addEventListener('change',()=>{
+            appSettings[key]=control.checked;
+            localStorage.setItem('docxAppConfig',JSON.stringify(appSettings));
+        });
+        row.appendChild(control);row.appendChild(document.createTextNode(' '+label));body.appendChild(row);
+    });
+    const hint=document.createElement('p');
+    hint.textContent='Table filtering is not claimed here: legacy conversion currently emits every extracted table. QA reports actual omissions instead of predicted FILTERED statuses.';
+    body.appendChild(hint);
+    for(const [label,handler] of [['Export Config JSON',exportConfigJson],
+        ['Import Config JSON',()=>document.getElementById('config_import_file').click()]]) {
+        const btn=document.createElement('button');btn.textContent=label;btn.type='button';
+        btn.className='btn-action';btn.addEventListener('click',handler);body.appendChild(btn);
+    }
+    const input=document.createElement('input');input.type='file';input.accept='.json';
+    input.id='config_import_file';input.hidden=true;
+    input.addEventListener('change',()=>importConfigJson(input));body.appendChild(input);
+    card.appendChild(body);
+    const grid=container.querySelector('.settings-grid');if(grid)grid.appendChild(card);
+}
+function exportConfigJson() {
+    const url=URL.createObjectURL(new Blob([JSON.stringify(appSettings,null,2)],{type:'application/json'}));
+    const a=document.createElement('a');a.href=url;a.download='docx_app_config.json';a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+async function importConfigJson(input) {
+    const file=input.files&&input.files[0];if(!file)return;
+    try {
+        const clean=validateIncomingConfig(JSON.parse(await file.text()));
+        Object.assign(appSettings,clean);
+        localStorage.setItem('docxAppConfig',JSON.stringify(appSettings));
+        renderSettingsTab();showStatus('Config imported','success');
+    } catch(e){showStatus('Config rejected: '+e.message,'error');}
+}
 function resetSettings() {
-    appSettings.smartHeaderNaming = true;
-    appSettings.enableValidator = true;
-    appSettings.debugMode = false;
-    appSettings.robustParsing = false;
-    appSettings.autoApprove = false;
+    Object.assign(appSettings,CONFIG_DEFAULTS);
     localStorage.removeItem('appSettings');
+    localStorage.removeItem('docxAppConfig');
     renderSettingsTab();
 }
-
 // Initialize
 document.addEventListener('DOMContentLoaded', loadSettings);
