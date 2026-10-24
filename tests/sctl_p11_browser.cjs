@@ -49,6 +49,13 @@ async function run() {
     await page.waitForFunction(() => document.getElementById('sctl-status').textContent.startsWith('REJECTED:'));
     check('incorrect ZIP fails closed', (await page.textContent('#sctl-status')).includes('NO VERIFIED SOURCE LOADED') &&
       await page.locator('#sctl-frame').isHidden() && !(await page.evaluate(() => SCTLTab.isLoaded())));
+    await page.setInputFiles('#sctl-file', {
+      name: 'same-size-but-wrong.zip', mimeType: 'application/zip',
+      buffer: Buffer.alloc(1888155, 0)
+    });
+    await page.waitForFunction(() => document.getElementById('sctl-status').textContent.includes('ZIP SHA-256 mismatch'));
+    check('same-size incorrect SHA-256 fails closed',
+      !(await page.evaluate(() => SCTLTab.isLoaded())) && await page.locator('#sctl-frame').isHidden());
     await page.click('#xy-tab-caps');
     check('CAPS remains available', await page.locator('#tab-caps').isVisible());
     await page.click('#xy-tab-diffhtml');
