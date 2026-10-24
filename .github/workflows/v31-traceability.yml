@@ -41,3 +41,22 @@ jobs:
             exit 1
           }
           grep -o '<pre id="test-result">PASS: Browser DOCX extraction[^<]*' /tmp/v31-browser-dom.html
+      - name: Independent R5 source oracle (checked-in original DOCX)
+        run: |
+          python3 tests/r5_source_oracle.py > tests/.r5_oracle.json
+          cat tests/.r5_oracle.json
+          python3 -m json.tool tests/.r5_oracle.json >/dev/null
+      - name: Real R5 DOCX static browser source-inventory rehearsal (not R5_after)
+        run: |
+          python3 -m http.server 8876 --bind 127.0.0.1 >/tmp/r5-http.log 2>&1 &
+          sleep 2
+          CHROME="$(command -v google-chrome || command -v chromium || true)"
+          test -n "$CHROME" || exit 1
+          timeout 140 "$CHROME" --headless --no-sandbox --disable-dev-shm-usage --disable-gpu --virtual-time-budget=70000 \
+            --dump-dom http://127.0.0.1:8876/tests/browser_r5.html >/tmp/v31-r5-dom.html 2>/tmp/v31-r5-stderr.txt
+          grep -q '<pre id="r5-result">PASS: repo R5 DOCX SHA' /tmp/v31-r5-dom.html || {
+            grep -o '<pre id="r5-result">FAIL:[^<]*' /tmp/v31-r5-dom.html || true
+            tail -60 /tmp/v31-r5-stderr.txt
+            exit 1
+          }
+          grep -o '<pre id="r5-result">PASS: repo R5 DOCX SHA[^<]*' /tmp/v31-r5-dom.html

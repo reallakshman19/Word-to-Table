@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Repository R5 original audit</title></head>
+<body><pre id="r5-result">RUNNING</pre><iframe id="app" src="../index.html" style="width:1050px;height:750px"></iframe>
+<script>
+'use strict';
+document.getElementById('app').addEventListener('load',async()=>{
+ const result=document.getElementById('r5-result'),frame=document.getElementById('app').contentWindow;
+ try {
+    await new Promise(r=>setTimeout(r,1000));
+    const oracle=await (await fetch('./.r5_oracle.json')).json();
+    const raw=await (await fetch('../R5.docx')).arrayBuffer();
+    if(raw.byteLength<200000)throw Error('R5 fixture unexpectedly tiny');
+    const real=await frame.eval('SourceInventory').fromArrayBuffer(raw);
+    if(real.occurrences.length!==oracle.supportedOccurrenceCount)
+       throw Error('R5 source occurrence mismatch: JS='+real.occurrences.length+' independent='+oracle.supportedOccurrenceCount);
+    if(real.tables.length!==oracle.tableCount)
+       throw Error('R5 source table count mismatch: JS='+real.tables.length+' independent='+oracle.tableCount);
+    const hash=await frame.auditSha256(raw);
+    if(hash!==oracle.sourceSha256)throw Error('R5 fixture SHA mismatch');
+    // Run actual app extraction, not just the source inventory.
+    const file=new frame.File([raw],'R5.docx',{
+      type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+    const input=frame.document.getElementById('file_upload'),dt=new frame.DataTransfer();
+    dt.items.add(file);input.files=dt.files;frame.onDocxChanged();
+    await frame.extractTables();await frame.runDiffAndQA();
+    const state=frame.eval('appState');
+    if(!state.audit)throw Error('App did not produce R5 QA audit');
+    if(state.audit.result.sourceTotal!==oracle.supportedOccurrenceCount)
+       throw Error('R5 app audit did not preserve full inventory count');
+    if(state.audit.result.dispositionCoverage!==1)throw Error('R5 disposition accounting mismatch');
+    if(state.audit.result.qualified)throw Error('R5 self-generated HTML improperly certified source fidelity');
+    if(state.audit.meta.sourceSha256!==oracle.sourceSha256)throw Error('R5 audited wrong source bytes');
+    if(state.audit.meta.exportArtifactVerified!==false)throw Error('R5 export bytes prematurely attested');
+    result.textContent='PASS: repo R5 DOCX SHA '+oracle.sourceSha256+
+       ' · independent source occurrences '+oracle.supportedOccurrenceCount+
+       ' · OOXML tables '+oracle.tableCount+
+       ' · extracted tables '+state.tables.length+
+       ' · source-fidelity qualified=false; R5_after companion NOT_RUN';
+ }catch(e){result.textContent='FAIL: '+(e.stack||e);}
+},{once:true});
+</script></body></html>
