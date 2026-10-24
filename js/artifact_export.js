@@ -39,6 +39,12 @@ const ArtifactExport = (() => {
         if(row.length || cell!=='') {row.push(cell);rows.push(row);}
         return rows;
     }
+    function csvText(rows) {
+        return rows.map(row=>row.map(v=>{
+            const s=String(v == null ? '' : v);
+            return /[",\r\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+        }).join(',')).join('\r\n');
+    }
     function equalRows(actual, expected) {
         return actual.length===expected.length && actual.every((r,i)=>
             r.length===expected[i].length && r.every((c,j)=>c===expected[i][j]));
@@ -131,16 +137,18 @@ const ArtifactExport = (() => {
         const files=[],seen=new Set(),sheetNames=new Set();
         if(mode==='individual'){
             for(const item of selected){
-                const raw=String(item.table.csv == null?'':item.table.csv);
-                if(!equalRows(csvRows(raw),item.rows))
-                    throw new Error('CSV does not match selected table grid: '+item.table.tableName);
+                const previous=String(item.table.csv == null?'':item.table.csv);
+                const staleLegacyCsv=!equalRows(csvRows(previous),item.rows);
+                // Selection's current grid is authoritative; legacy cached CSV
+                // may be outdated after header naming or editing.
+                const raw=csvText(item.rows);
                 const name=unique(safeName(item.table.tableName),seen,65)+'.csv';
                 const bytes=encoder().encode('\uFEFF'+raw);
                 // Verify the exact bytes prepared for download, not an alternate string.
                 const checked=new TextDecoder().decode(bytes);
                 if(!equalRows(csvRows(checked),item.rows))throw new Error('CSV exported bytes fail grid parity');
                 files.push({name,mime:'text/csv;charset=utf-8',bytes,
-                    tableIndices:[item.index],checked:true});
+                    tableIndices:[item.index],checked:true,legacyCsvRegenerated:staleLegacyCsv});
             }
             if(includeLogs){
                 const bytes=encoder().encode('Export Log - '+selected.length+' tables exported.\n');
@@ -192,7 +200,9 @@ const ArtifactExport = (() => {
                 tableIndices:file.tableIndices,
                 sourceTableIds:file.tableIndices.map(i=>
                     sourceTables[(all[i].tableIndex||i+1)-1]?.tableId||null),
-                gridParityVerified:file.checked,sheets:file.sheets||null
+                gridParityVerified:file.checked,
+                legacyCsvRegenerated:Boolean(file.legacyCsvRegenerated),
+                sheets:file.sheets||null
             });
         }
         const manifest={
@@ -205,9 +215,15 @@ const ArtifactExport = (() => {
         };
         return {files,manifest};
     }
-    function download(prepared) {
+    async function download(prepared) {
         if(!prepared||!prepared.manifest.preparedBytesVerified)
             throw new Error('Export byte verification failed');
+        // Rehash the SAME buffers right before the file-save gesture to
+        // detect mutations after the original readback verification.
+        for(let i=0;i<prepared.files.length;i++){
+            if((await sha256(prepared.files[i].bytes))!==prepared.manifest.files[i].sha256)
+                throw new Error('Export byte buffer changed after verification');
+        }
         for(const f of prepared.files){
             const url=URL.createObjectURL(new Blob([f.bytes],{type:f.mime}));
             const a=document.createElement('a');a.href=url;a.download=f.name;
@@ -215,7 +231,7 @@ const ArtifactExport = (() => {
             setTimeout(()=>URL.revokeObjectURL(url),1000);
         }
     }
-    const api={prepare,download,csvRows,grid,equalRows,workbookParts,worksheetXml};
+    const api={prepare,download,csvText,csvRows,grid,equalRows,workbookParts,worksheetXml};
     if(typeof module!=='undefined'&&module.exports)module.exports=api;
     return api;
 })();

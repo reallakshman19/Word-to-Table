@@ -38,9 +38,11 @@ async function smoke() {
       throw Error('F6 CSV selected artifact/hash missing');
     const altered=exported.map(t=>({...t}));
     altered[0].csv='CORRUPTED EXPORT';
-    let rejected=false;
-    try {await artifact.prepare(altered,[0],'individual',false);}catch(e){rejected=true;}
-    if(!rejected)throw Error('F6 stale CSV falsely attested');
+    const repaired=await artifact.prepare(altered,[0],'individual',false);
+    if(!repaired.manifest.files[0].legacyCsvRegenerated)
+      throw Error('F6 stale cached CSV was not detected');
+    if(new TextDecoder().decode(repaired.files[0].bytes).includes('CORRUPTED EXPORT'))
+      throw Error('F6 stale cached bytes leaked into actual export');
     const excel=await artifact.prepare(exported,[0],'combined',true,frame.eval('appState.sourceLedger'));
     if(!excel.manifest.preparedBytesVerified||!excel.files[0].name.endsWith('.xlsx'))
       throw Error('F6 combined XLSX exact-byte verification failed');

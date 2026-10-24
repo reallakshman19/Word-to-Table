@@ -194,7 +194,7 @@ const OutputTab = {
                 const epoch=appState.runEpoch;
                 const prepared=await ArtifactExport.prepare(appState.tables,indices,mode,this.includeLogs,appState.sourceLedger);
                 if(epoch!==appState.runEpoch)throw new Error('Source selection changed during export');
-                ArtifactExport.download(prepared);
+                await ArtifactExport.download(prepared);
                 appState.exportManifests.push(prepared.manifest);
                 if(appState.audit)appState.audit.meta.exportArtifacts=appState.exportManifests.slice();
                 showStatus('Prepared bytes verified and download initiated for '+

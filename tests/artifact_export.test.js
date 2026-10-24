@@ -19,9 +19,18 @@ test('F6-CSV: exact exported bytes hash and selected-grid parity',async()=>{
  assert.equal(res.manifest.deliveredFileBytesVerified,false);
  assert.equal(res.manifest.originalDocxFidelityVerified,false);
 });
-test('F6-TAMPER: stale output CSV cannot be certified',async()=>{
+test('F6-TAMPER: stale cached CSV is not exported or falsely accepted as current',async()=>{
  const data=[table('Corrupt','A\nSOME_OTHER_VALUE')];
- await assert.rejects(()=>ArtifactExport.prepare(data,[0],'individual',false),/does not match selected table grid/);
+ const result=await ArtifactExport.prepare(data,[0],'individual',false);
+ assert.equal(result.manifest.files[0].legacyCsvRegenerated,true);
+ const bytes=new TextDecoder().decode(result.files[0].bytes);
+ assert.deepEqual(ArtifactExport.csvRows(bytes),[['A'],['B']]);
+ assert.ok(!bytes.includes('SOME_OTHER_VALUE'));
+});
+test('F6-MUTATION: changed file bytes fail hash before browser download',async()=>{
+ const result=await ArtifactExport.prepare([table('Good','A\nB')],[0],'individual',false);
+ result.files[0].bytes[3]^=1;
+ await assert.rejects(()=>ArtifactExport.download(result),/buffer changed/);
 });
 test('F6-SELECTION: repeated/out-of-range indices cannot export',async()=>{
  const data=[table('Good','A\nB')];

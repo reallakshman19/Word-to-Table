@@ -44,9 +44,13 @@ document.getElementById('app').addEventListener('load',async()=>{
       return {table:i,rowsActual:a.length,rowsExpected:e.length,row,
         actualWidth:a[row]?.length||0,expectedWidth:e[row]?.length||0};
     }).filter(Boolean);
-    if(mismatches.length)throw Error('R5 CSV mismatch diagnostics '+JSON.stringify(mismatches.slice(0,8))+' / total '+mismatches.length);
+    // Expected evidence: cached CSV is allowed to be stale, but actual newly
+    // serialized export must reflect selected grid and report regeneration.
+    const legacyMismatchCount=mismatches.length;
     const csv=await exporter.prepare(state.tables,allIndices,'individual',false,state.sourceLedger);
     const xlsx=await exporter.prepare(state.tables,allIndices,'combined',false,state.sourceLedger);
+    if(csv.manifest.files.filter(f=>f.legacyCsvRegenerated).length!==legacyMismatchCount)
+       throw Error('R5 stale cached CSV count not accounted for');
     if(csv.files.length!==state.tables.length || xlsx.manifest.files[0].sheets.length!==state.tables.length)
        throw Error('R5 selected-table CSV/XLSX file or sheet inventory mismatch');
     if(!csv.manifest.preparedBytesVerified || !xlsx.manifest.preparedBytesVerified)
@@ -57,7 +61,8 @@ document.getElementById('app').addEventListener('load',async()=>{
        ' · independent source occurrences '+oracle.supportedOccurrenceCount+
        ' · OOXML tables '+oracle.tableCount+
        ' · extracted tables '+state.tables.length+
-       ' · CSV artifacts '+csv.files.length+' · XLSX sheets '+xlsx.manifest.files[0].sheets.length+
+       ' · CSV artifacts '+csv.files.length+' · stale cached CSV regenerated '+legacyMismatchCount+
+       ' · XLSX sheets '+xlsx.manifest.files[0].sheets.length+
        ' · source-fidelity qualified=false; R5_after companion NOT_RUN';
  }catch(e){result.textContent='FAIL: '+(e.stack||e);}
 },{once:true});
