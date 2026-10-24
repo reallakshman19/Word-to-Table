@@ -16,11 +16,20 @@ const DiffEngine = (() => {
         const source = sourceLedger.occurrences || [];
         const target = outputLedger.occurrences || [];
         const mode = outputLedger.mode || 'companion';
+        if (source.length > 100000 || target.length > 100000) throw new Error('Audit occurrence limit (100,000 per side) exceeded; split the document');
         const events = conversionLedger && conversionLedger.events || [];
         const filtered = new Map(events.filter(e => e.action === 'FILTERED').map(e => [e.sourceId,e]));
         const unsupported = new Set((conversionLedger && conversionLedger.unsupportedSourceIds) || []);
         const index = new Map();
+        const byPosition = new Map();
+        const tableOrdinal = new Map((sourceLedger.tables || []).filter(t=>!t.parentTableId).map((t,i)=>[t.tableId,i]));
+        const transforms = new Set(events.filter(e=>e.action==='TRANSFORMED').map(e=>e.sourceId+'|'+e.outputId));
         for (const item of target) {
+            const positionKey = item.kind === 'cell' ?
+                'c|'+item.tableIndex+'|'+item.rowIndex+'|'+item.colIndex :
+                'p|'+item.paraIndex;
+            if (!byPosition.has(positionKey)) byPosition.set(positionKey, []);
+            byPosition.get(positionKey).push(item);
             for (const sid of (item.sourceIds || [])) {
                 if (!index.has(sid)) index.set(sid, []);
                 index.get(sid).push(item);
@@ -41,10 +50,7 @@ const DiffEngine = (() => {
                 if (candidates.length === 1) {
                     out = candidates[0];
                     const shared = (out.sourceIds || []).length > 1;
-                    const hasTransform = events.some(e =>
-                        e.action === 'TRANSFORMED' &&
-                        e.sourceId === src.sourceId &&
-                        e.outputId === out.outputId);
+                    const hasTransform = transforms.has(src.sourceId+'|'+out.outputId);
                     if (used.has(out.outputId) && !shared) {
                         status = 'AMBIGUOUS'; reason = 'Output occurrence already consumed';
                     } else if (shared && !hasTransform) {
@@ -60,12 +66,9 @@ const DiffEngine = (() => {
                 }
             } else {
                 let candidates;
-                if (src.kind === 'cell') candidates = target.filter(t =>
-                    t.kind === 'cell' &&
-                    t.tableIndex === sourceTableOrdinal(sourceLedger, src.tableId) &&
-                    t.rowIndex === src.rowIndex && t.colIndex === src.colIndex);
+                if (src.kind === 'cell') candidates = byPosition.get('c|'+tableOrdinal.get(src.tableId)+'|'+src.rowIndex+'|'+src.colIndex) || [];
                 else {
-                    candidates = target.filter(t => t.kind === 'paragraph' && t.paraIndex === paragraphCursor);
+                    candidates = byPosition.get('p|'+paragraphCursor) || [];
                     paragraphCursor++;
                 }
                 if (candidates.length === 1 && !used.has(candidates[0].outputId)) {
@@ -100,7 +103,8 @@ const DiffEngine = (() => {
             outputTotal:target.length, extraOutput:extras, diagnostics,
             dispositionCoverage:total === source.length ? 1 : 0,
             qualified:diagnostics.length === 0 && !statuses.AMBIGUOUS &&
-                !statuses.UNSUPPORTED && !statuses.ERROR && !extras.length
+                !statuses.UNSUPPORTED && !statuses.ERROR && !statuses.MISSING &&
+                !statuses.ALTERED && !statuses.FILTERED && !extras.length
         };
     }
     function sourceTableOrdinal(ledger, id) {
