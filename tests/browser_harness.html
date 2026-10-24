@@ -66,12 +66,12 @@ async function smoke() {
     const cards=doc.querySelectorAll('#tab-diffhtml .audit-record');
     const summary=doc.getElementById('tab-diffhtml').textContent;
     if(cards.length!==5)throw Error('Expected 5 source occurrences, got '+cards.length);
-    if(!summary.includes('MISSING'))throw Error('Missing paragraph not detected');
+    if(!summary.includes('OUT_OF_EXPORT_SCOPE'))throw Error('Tables-only paragraph disposition not visible');
     if(!summary.includes('CANDIDATE_MATCH'))throw Error('Unverified extracted cells not disclosed');
     if(frame.eval('appState.audit.result.qualified')!==false) throw Error('Post-hoc source IDs incorrectly certified');
     if(frame.eval('appState.audit.meta.exportArtifactVerified')!==false) throw Error('F6 output export falsely certified');
     const issueCard=Array.from(cards).find(c=>c.textContent.includes('Design limits'));
-    if(!issueCard || !issueCard.textContent.includes('MISSING'))throw Error('Dropped paragraph not traced');
+    if(!issueCard || !issueCard.textContent.includes('OUT_OF_EXPORT_SCOPE'))throw Error('Out-of-scope paragraph not traced');
     const config=doc.querySelector('.main-tab-btn[data-tab="settings"]');
     const macro=doc.querySelector('.main-tab-btn[data-tab="record"]');
     if(!config || config.textContent.trim()!=='Config' || !macro)throw Error('Legacy tabs changed');
