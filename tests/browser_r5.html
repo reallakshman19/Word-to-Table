@@ -9,7 +9,10 @@ document.getElementById('app').addEventListener('load',async()=>{
     const oracle=await (await fetch('./.r5_oracle.json')).json();
     const raw=await (await fetch('../R5.docx')).arrayBuffer();
     if(raw.byteLength<200000)throw Error('R5 fixture unexpectedly tiny');
-    const real=await frame.eval('SourceInventory').fromArrayBuffer(raw);
+    // JSZip validates typed arrays by realm. Supply a Uint8Array owned by
+    // the application's iframe, not the harness's parent ArrayBuffer.
+    const inAppBytes=new frame.Uint8Array(raw);
+    const real=await frame.eval('SourceInventory').fromArrayBuffer(inAppBytes);
     if(real.occurrences.length!==oracle.supportedOccurrenceCount)
        throw Error('R5 source occurrence mismatch: JS='+real.occurrences.length+' independent='+oracle.supportedOccurrenceCount);
     if(real.tables.length!==oracle.tableCount)
@@ -17,7 +20,7 @@ document.getElementById('app').addEventListener('load',async()=>{
     const hash=await frame.auditSha256(raw);
     if(hash!==oracle.sourceSha256)throw Error('R5 fixture SHA mismatch');
     // Run actual app extraction, not just the source inventory.
-    const file=new frame.File([raw],'R5.docx',{
+    const file=new frame.File([inAppBytes],'R5.docx',{
       type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
     const input=frame.document.getElementById('file_upload'),dt=new frame.DataTransfer();
     dt.items.add(file);input.files=dt.files;frame.onDocxChanged();
