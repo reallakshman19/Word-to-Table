@@ -10,19 +10,25 @@ const SourceInventory = (() => {
     function attr(node, name) {
         return node.getAttributeNS(W, name) || node.getAttribute('w:' + name) || node.getAttribute(name);
     }
+    const REVISION_TAGS = ['ins','del','moveFrom','moveTo','pPrChange','rPrChange',
+        'tblPrChange','trPrChange','tcPrChange','cellIns','cellDel','cellMerge'];
+    function containsRevision(node) {
+        return REVISION_TAGS.some(tag => desc(node,tag).length > 0);
+    }
     function paragraphText(p) {
+        // Text extraction is not revision acceptance. Changes are recorded as
+        // UNSUPPORTED below until an explicit revision disposition is chosen.
         const out = [];
-        for (const r of children(p)) {
-            if (r.localName !== 'r' && r.localName !== 'hyperlink') continue;
-            const runs = r.localName === 'r' ? [r] : children(r, 'r');
-            for (const run of runs) {
-                for (const part of children(run)) {
-                    if (part.localName === 't' || part.localName === 'delText') out.push(part.textContent || '');
-                    if (part.localName === 'tab') out.push('\t');
-                    if (part.localName === 'br' || part.localName === 'cr') out.push('\n');
-                }
-            }
+        function walk(node) {
+            if (node.localName === 'del' || node.localName === 'moveFrom') return;
+            if (node.localName === 't') { out.push(node.textContent || ''); return; }
+            if (node.localName === 'tab') { out.push('\t'); return; }
+            if (node.localName === 'br' || node.localName === 'cr') { out.push('\n'); return; }
+            // Recurse through runs, hyperlinks and change wrappers, so an
+            // inserted visible run is never silently returned as empty text.
+            children(node).forEach(walk);
         }
+        children(p).forEach(walk);
         return out.join('');
     }
     function nodeId(path) { return 'src:word/document.xml:' + path; }
@@ -67,7 +73,8 @@ const SourceInventory = (() => {
                     const occurrence = add('cell', cellPath, text, {
                         tableId, rowIndex: ri, cellIndex: ci,
                         colIndex: row.length, gridSpan: span,
-                        vMerge: merge, paragraphs, structuralEmpty: !text
+                        vMerge: merge, paragraphs, structuralEmpty: !text,
+                        coverage: containsRevision(tc) ? 'UNSUPPORTED' : 'SUPPORTED'
                     });
                     entry.cells.push(occurrence.sourceId);
                     row.push(occurrence.sourceId);
@@ -83,7 +90,9 @@ const SourceInventory = (() => {
         for (const el of children(body)) {
             if (el.localName === 'p') {
                 pi++;
-                add('paragraph', '/body/p[' + pi + ']', paragraphText(el), {});
+                add('paragraph', '/body/p[' + pi + ']', paragraphText(el), {
+                    coverage: containsRevision(el) ? 'UNSUPPORTED' : 'SUPPORTED'
+                });
             } else if (el.localName === 'tbl') {
                 ti++;
                 walkTable(el, '/body/tbl[' + ti + ']', null);
@@ -91,7 +100,7 @@ const SourceInventory = (() => {
                 diagnostics.push({kind:'UNSUPPORTED_SOURCE_FEATURE', part:'word/document.xml', feature:el.localName});
             }
         }
-        const unsupportedTags = ['drawing','pict','object','txbxContent','oMath','oMathPara','altChunk','fldSimple','instrText','footnoteReference','endnoteReference','commentReference','sdt'];
+        const unsupportedTags = ['drawing','pict','object','txbxContent','oMath','oMathPara','altChunk','fldSimple','instrText','footnoteReference','endnoteReference','commentReference','sdt',...REVISION_TAGS];
         unsupportedTags.forEach(tag => {
             desc(body, tag).forEach((node, i) => diagnostics.push({
                 kind:'UNSUPPORTED_SOURCE_FEATURE', part:'word/document.xml',

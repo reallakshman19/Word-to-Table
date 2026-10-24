@@ -1,11 +1,12 @@
 /* Capture actual browser output and its source-emission events. */
 const ConversionLedger = (() => {
     function build(sourceLedger, appTables, mode) {
-        const events = [], snippets = [], unsupportedSourceIds = [];
+        const events = [], snippets = [], unsupportedSourceIds = [], tableMappings = [];
         if (mode !== 'browser') {
             // The Python service has not established occurrence provenance.
             return {events, html:'', unsupportedSourceIds:sourceLedger.occurrences.map(x => x.sourceId),
-                verified:false, reason:'Local server response has no source-occurrence contract'};
+                verified:false, provenanceVerified:false, tables:[],
+                reason:'Local server response has no source-occurrence contract'};
         }
         const topTables = (sourceLedger.tables || []).filter(t => !t.parentTableId);
         (appTables || []).forEach((t, ti) => {
@@ -17,6 +18,7 @@ const ConversionLedger = (() => {
             table.setAttribute('data-source-table-id', source.tableId);
             const rows = Array.from(table.querySelectorAll('tr')).filter(tr=>tr.closest('table')===table);
             const headerRow = Number.isInteger(t.headerRow) ? t.headerRow : 1;
+            tableMappings.push({sourceTableId:source.tableId, outputTableIndex:ti, headerRow});
             const idFor = (r,c) => (source.grid[r] && source.grid[r][c]) || null;
             rows.forEach((tr, ri) => {
                 const cells = Array.from(tr.children).filter(c=>c.localName==='td'||c.localName==='th');
@@ -44,7 +46,9 @@ const ConversionLedger = (() => {
         });
         const html = '<!doctype html><html><head><meta charset="utf-8"></head><body>' +
             snippets.join('\n') + '</body></html>';
-        return {events, html, unsupportedSourceIds, verified:true};
+        return {events, html, unsupportedSourceIds, tables:tableMappings,
+            verified:false, provenanceVerified:false,
+            reason:'Source IDs annotated post-serialization by inferred positions; no trusted emission-bound provenance'};
     }
     const api = {build};
     if (typeof module!=='undefined' && module.exports) module.exports=api;

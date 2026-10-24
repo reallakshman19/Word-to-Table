@@ -14,7 +14,12 @@ const OutputInventory = (() => {
         if (typeof DOMParser === 'undefined') throw new Error('DOMParser unavailable');
         const doc = new DOMParser().parseFromString(String(html), 'text/html');
         const occurrences = [];
-        const ids = new Set();
+        // DOMParser does not calculate stylesheets or computed visibility.
+        // An external or embedded CSS rule may conceal classed content.
+        // Browser-based companion comparisons therefore remain candidates,
+        // never verified visible-source preservation.
+        const visibilityRisk = Boolean(doc.querySelector('style,link[rel~="stylesheet"]'));
+        const visibilityVerified = mode === 'generated' && !visibilityRisk;
         const tables = Array.from(doc.querySelectorAll('table')).filter(t => !isHidden(t));
         tables.forEach((table, ti) => {
             const trs = Array.from(table.querySelectorAll('tr'))
@@ -33,7 +38,6 @@ const OutputInventory = (() => {
                         sourceIds:dataIds, sourceTableId: mode === 'generated' ? table.getAttribute('data-source-table-id') : null,
                         location:outputId
                     });
-                    ids.add(cell);
                 });
             });
         });
@@ -50,7 +54,10 @@ const OutputInventory = (() => {
                     String(el.getAttribute('data-source-id') || '').split('|').filter(Boolean) : []
             });
         });
-        return {schemaVersion:1, mode, occurrences, tableCount:tables.length};
+        return {schemaVersion:1, mode, occurrences, tableCount:tables.length,
+            visibilityRisk, visibilityVerified,
+            visibilityBasis:visibilityRisk ? 'STYLESHEET_NOT_EVALUATED' :
+                (mode === 'generated' ? 'INERT_GENERATED_DOM' : 'COMPANION_DOM_ONLY')};
     }
     const api = {parse};
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

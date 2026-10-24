@@ -1,6 +1,6 @@
 /* Deterministic, occurrence-consuming diff. No global substring matching. */
 const DiffEngine = (() => {
-    const STATUSES = ['PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','FILTERED','MISSING','AMBIGUOUS','UNSUPPORTED','ERROR'];
+    const STATUSES = ['PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','CANDIDATE_MATCH','FILTERED','MISSING','AMBIGUOUS','UNSUPPORTED','ERROR'];
     function norm(value, cfg) {
         let v = String(value == null ? '' : value);
         if (cfg.normalizeWhitespace !== false) v = v.replace(/\s+/g, ' ').trim();
@@ -24,6 +24,9 @@ const DiffEngine = (() => {
         const byPosition = new Map();
         const tableOrdinal = new Map((sourceLedger.tables || []).filter(t=>!t.parentTableId).map((t,i)=>[t.tableId,i]));
         const transforms = new Set(events.filter(e=>e.action==='TRANSFORMED').map(e=>e.sourceId+'|'+e.outputId));
+        const trustedProvenance = mode === 'generated' && conversionLedger &&
+            conversionLedger.provenanceVerified === true && outputLedger.visibilityVerified === true;
+        const tableMappings = new Map((conversionLedger && conversionLedger.tables || []).map(t => [t.sourceTableId,t]));
         for (const item of target) {
             const positionKey = item.kind === 'cell' ?
                 'c|'+item.tableIndex+'|'+item.rowIndex+'|'+item.colIndex :
@@ -51,15 +54,30 @@ const DiffEngine = (() => {
                     out = candidates[0];
                     const shared = (out.sourceIds || []).length > 1;
                     const hasTransform = transforms.has(src.sourceId+'|'+out.outputId);
-                    if (used.has(out.outputId) && !shared) {
+                    const mapping = tableMappings.get(src.tableId);
+                    const headerRow = mapping ? mapping.headerRow : 1;
+                    const expectedTable = mapping ? mapping.outputTableIndex : tableOrdinal.get(src.tableId);
+                    const expectedRow = src.rowIndex < headerRow ? 0 : src.rowIndex - headerRow + 1;
+                    const expectedCol = src.colIndex;
+                    const structuralMatch = src.kind === 'cell' &&
+                        out.kind === 'cell' && Number.isInteger(expectedTable) &&
+                        out.tableIndex === expectedTable && out.rowIndex === expectedRow &&
+                        out.colIndex === expectedCol &&
+                        (!out.sourceTableId || out.sourceTableId === src.tableId);
+                    if (!structuralMatch) {
+                        status = 'AMBIGUOUS'; reason = 'Table, row or column moved without verified structural transformation';
+                    } else if (used.has(out.outputId) && !shared) {
                         status = 'AMBIGUOUS'; reason = 'Output occurrence already consumed';
                     } else if (shared && !hasTransform) {
                         status = 'AMBIGUOUS'; reason = 'Multi-source output without transformation evidence';
                     } else {
                         used.add(out.outputId);
-                        status = textStatus(src.textOriginal, out.text, cfg);
-                        reason = shared ? 'Header aggregation documented; inspect changed text' : 'Embedded source ID in generated output';
-                        if (shared && status === 'PRESERVED_EXACT') status = 'ALTERED';
+                        const comparison = textStatus(src.textOriginal, out.text, cfg);
+                        status = trustedProvenance ? comparison : 'CANDIDATE_MATCH';
+                        reason = trustedProvenance ?
+                            'Source-ID and structural correspondence supported by emission provenance' :
+                            'Post-hoc source ID is not independently verified; text agreement is only a candidate';
+                        if (shared && trustedProvenance && status === 'PRESERVED_EXACT') status = 'ALTERED';
                     }
                 } else if (candidates.length > 1) {
                     status = 'AMBIGUOUS'; reason = 'Source ID emitted more than once';
@@ -75,7 +93,8 @@ const DiffEngine = (() => {
                     out = candidates[0];
                     const match = textStatus(src.textOriginal, out.text, cfg);
                     if (match === 'PRESERVED_EXACT' || match === 'PRESERVED_NORMALIZED') {
-                        status = match; reason = 'Unique position-constrained candidate';
+                        status = 'CANDIDATE_MATCH';
+                        reason = 'Text at same position; no independent companion provenance';
                         used.add(out.outputId);
                     } else {
                         status = 'AMBIGUOUS'; reason = 'Position candidate differs; no transformation provenance';
@@ -102,7 +121,8 @@ const DiffEngine = (() => {
             tableCount:(sourceLedger.tables || []).length,
             outputTotal:target.length, extraOutput:extras, diagnostics,
             dispositionCoverage:total === source.length ? 1 : 0,
-            qualified:diagnostics.length === 0 && !statuses.AMBIGUOUS &&
+            qualified:trustedProvenance && diagnostics.length === 0 &&
+                !statuses.CANDIDATE_MATCH && !statuses.AMBIGUOUS &&
                 !statuses.UNSUPPORTED && !statuses.ERROR && !statuses.MISSING &&
                 !statuses.ALTERED && !statuses.FILTERED && !extras.length
         };
