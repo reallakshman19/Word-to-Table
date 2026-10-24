@@ -41,8 +41,11 @@ const OutputTab = {
                 <div class="output-main">
                     <div class="export-card">
                         <h3>Export Configuration</h3>
+                        <p class="desc-small">${appState.mode==='local'?
+                          'Local server saves selected tables in the chosen folder. Server-written bytes are not yet attested.':
+                          'GitHub Pages: download selected tables directly, with exact prepared-file hashes and readback grid checks.'}</p>
                         
-                        <div class="form-group">
+                        <div class="form-group" style="${appState.mode==='local'?'':'display:none'}">
                             <label>Target Directory</label>
                             <div class="input-with-btn">
                                 <input type="text" id="export-path" value="${this.targetPath || 'C:/Exports'}" readonly>
@@ -174,16 +177,33 @@ const OutputTab = {
             return;
         }
 
-        if (!this.targetPath) {
+        if (appState.mode === 'local' && !this.targetPath) {
             alert("Please select a target directory.");
             return;
         }
 
-        const indices = Array.from(this.selectedItems);
+        const indices = Array.from(this.selectedItems).sort((a,b)=>a-b);
         showLoading(true);
         showStatus(`Exporting ${indices.length} tables...`, 'working');
 
         try {
+            // Browser/GitHub Pages: export actual bytes and hash those same bytes.
+            // Verify against the selected in-memory grids, but NEVER certify
+            // completeness relative to the original DOCX.
+            if(appState.mode !== 'local'){
+                const epoch=appState.runEpoch;
+                const prepared=await ArtifactExport.prepare(appState.tables,indices,mode,this.includeLogs,appState.sourceLedger);
+                if(epoch!==appState.runEpoch)throw new Error('Source selection changed during export');
+                await ArtifactExport.download(prepared);
+                appState.exportManifests.push(prepared.manifest);
+                if(appState.audit)appState.audit.meta.exportArtifacts=appState.exportManifests.slice();
+                showStatus('Prepared bytes verified and download initiated for '+
+                    prepared.files.length+' file(s); disk persistence not verified.','success');
+                if(typeof logAction==='function') logAction('Browser export ('+mode+') bytes verified');
+                return;
+            }
+            // Legacy Python local mode: the server independently writes files.
+            // Do not claim byte fidelity until the backend returns attested bytes.
             // Prepare payload with full table objects
             const tableObjects = indices.map(idx => {
                 const t = appState.tables[idx];
@@ -212,7 +232,13 @@ const OutputTab = {
             const result = await resp.json();
 
             if (result.success) {
-                showStatus(`Export Successful! Saved to ${this.targetPath}`, 'success');
+                showStatus(`Server reported export saved to ${this.targetPath}; output bytes NOT VERIFIED.`, 'warn');
+                const record={schemaVersion:1,mode,selectedIndices:indices,
+                    preparedBytesVerified:false,deliveredFileBytesVerified:false,
+                    originalDocxFidelityVerified:false,proofBoundary:'SERVER_UNATTESTED',
+                    files:[]};
+                appState.exportManifests.push(record);
+                if(appState.audit)appState.audit.meta.exportArtifacts=appState.exportManifests.slice();
                 if (typeof logAction === 'function') {
                     logAction(`Batch Export (${mode}) completed. ${result.count} files saved.`);
                 }

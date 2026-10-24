@@ -109,6 +109,10 @@ class DocxParser {
             for (const child of children) {
                 if (child.localName === 't') {
                     texts.push(child.textContent);
+                } else if (child.localName === 'noBreakHyphen') {
+                    texts.push('\u2011');
+                } else if (child.localName === 'softHyphen') {
+                    texts.push('\u00ad');
                 } else if (child.localName === 'br') {
                     texts.push('\n');
                 } else if (child.localName === 'cr') {
@@ -172,7 +176,9 @@ class DocxParser {
     // ─── Table Extraction ───
 
     _extractTableGrid(tblEl) {
-        const trEls = Array.from(tblEl.getElementsByTagNameNS(WORD_NS, 'tr'));
+        // Only rows directly owned by this table. Descendant query incorrectly
+        // imported nested-table rows into the enclosing table.
+        const trEls = this._getChildren(tblEl).filter(x => x.localName === 'tr');
         const grid = [];
         for (const tr of trEls) {
             const rowData = [];
@@ -193,7 +199,9 @@ class DocxParser {
 
     _getCellText(tcEl) {
         const texts = [];
-        const pEls = Array.from(tcEl.getElementsByTagNameNS(WORD_NS, 'p'));
+        // Exclude paragraphs belonging to a nested table; those require
+        // separate explicit source coverage rather than leaking into this cell.
+        const pEls = this._getChildren(tcEl).filter(x => x.localName === 'p');
         for (const p of pEls) {
             const t = this._getParagraphText(p);
             texts.push(t); // Keep even empty paragraphs to preserve vertical spacing
@@ -411,7 +419,8 @@ class DocxParser {
                     csv,
                     source: 'Smart',
                     type: 'Heuristic',
-                    tableIndex: tableCount
+                    tableIndex: tableCount,
+                    headerRow: headerRow
                 });
 
                 this.log('INFO', `Table #${tableCount}: ${dataRows.length}×${headers.length} | ${confidence} | "${tableName}" | Page ${pageNumber}`);

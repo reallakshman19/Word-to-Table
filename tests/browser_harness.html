@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>v3.1 smoke test</title></head>
+<body><pre id="test-result">RUNNING</pre><iframe id="app" src="../index.html" style="width:1100px;height:800px"></iframe>
+<script>
+'use strict';
+async function smoke() {
+  const status=document.getElementById('test-result');
+  try {
+    const frame=document.getElementById('app').contentWindow;
+    await new Promise(resolve=>setTimeout(resolve,2500));
+    if(!frame.JSZip || typeof frame.extractTables!=='function') throw Error('Missing browser dependencies');
+    const ns='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+    function para(text) {
+      return '<w:p><w:r><w:t>'+text+'</w:t></w:r></w:p>';
+    }
+    function cell(text) {return '<w:tc>'+para(text)+'</w:tc>';}
+    const xml='<?xml version="1.0"?>'+
+      '<w:document xmlns:w="'+ns+'"><w:body>'+para('Design limits')+
+      '<w:tbl><w:tr>'+cell('Name')+cell('Quantity')+'</w:tr>'+
+      '<w:tr>'+cell('ABC')+cell('1')+'</w:tr></w:tbl></w:body></w:document>';
+    const zip=new frame.JSZip();
+    zip.file('word/document.xml',xml);
+    const array=await zip.generateAsync({type:'uint8array'});
+    const file=new frame.File([array],'synthetic.docx',{
+      type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+    const input=frame.document.getElementById('file_upload');
+    const dt=new frame.DataTransfer();dt.items.add(file);input.files=dt.files;
+    frame.onDocxChanged();
+    await frame.extractTables();
+    await frame.runDiffAndQA();
+    // F6: actual generated CSV and XLSX byte buffers, selected-table parity.
+    const exported=frame.eval('appState.tables');
+    const artifact=frame.eval('ArtifactExport');
+    const csv=await artifact.prepare(exported,[0],'individual',false,frame.eval('appState.sourceLedger'));
+    if(!csv.manifest.preparedBytesVerified||csv.manifest.originalDocxFidelityVerified)
+      throw Error('F6 CSV attestation conflated grid parity and DOCX fidelity');
+    if(csv.files.length!==1||csv.manifest.files[0].sha256.length!==64)
+      throw Error('F6 CSV selected artifact/hash missing');
+    const altered=exported.map(t=>({...t}));
+    altered[0].csv='CORRUPTED EXPORT';
+    const repaired=await artifact.prepare(altered,[0],'individual',false);
+    if(!repaired.manifest.files[0].legacyCsvRegenerated)
+      throw Error('F6 stale cached CSV was not detected');
+    if(new TextDecoder().decode(repaired.files[0].bytes).includes('CORRUPTED EXPORT'))
+      throw Error('F6 stale cached bytes leaked into actual export');
+    const excel=await artifact.prepare(exported,[0],'combined',true,frame.eval('appState.sourceLedger'));
+    if(!excel.manifest.preparedBytesVerified||!excel.files[0].name.endsWith('.xlsx'))
+      throw Error('F6 combined XLSX exact-byte verification failed');
+    if(excel.manifest.files[0].byteLength<500)throw Error('F6 XLSX too small');
+    // Real user-facing output action should be enabled on browser-only GitHub Pages.
+    frame.eval('OutputTab').selectedItems.clear();
+    frame.eval('OutputTab').selectedItems.add(0);
+    frame.eval('OutputTab').includeLogs=false;
+    // Blob URL downloads do not guarantee file persisted to user disk.
+    // Manifest must not claim delivered-file byte verification.
+    if(excel.manifest.deliveredFileBytesVerified)throw Error('F6 claims disk bytes verified');
+    // Actual Output Tab action and state manifest, without server or target folder.
+    await frame.eval('OutputTab').exportBatch('individual');
+    await frame.eval('OutputTab').exportBatch('combined');
+    const history=frame.eval('appState.exportManifests');
+    if(history.length!==2 || !history[0].preparedBytesVerified || !history[1].preparedBytesVerified)
+      throw Error('F6 Output-tab action did not persist a verified manifest');
+    if(history.some(m=>m.originalDocxFidelityVerified || m.deliveredFileBytesVerified))
+      throw Error('F6 Output-tab manifest falsely claims source or disk fidelity');
+    const doc=frame.document;
+    const cards=doc.querySelectorAll('#tab-diffhtml .audit-record');
+    const summary=doc.getElementById('tab-diffhtml').textContent;
+    if(cards.length!==5)throw Error('Expected 5 source occurrences, got '+cards.length);
+    if(!summary.includes('OUT_OF_EXPORT_SCOPE'))throw Error('Tables-only paragraph disposition not visible');
+    if(!summary.includes('CANDIDATE_MATCH'))throw Error('Unverified extracted cells not disclosed');
+    if(frame.eval('appState.audit.result.qualified')!==false) throw Error('Post-hoc source IDs incorrectly certified');
+    if(frame.eval('appState.audit.meta.exportArtifactVerified')!==false) throw Error('F6 output export falsely certified');
+    const issueCard=Array.from(cards).find(c=>c.textContent.includes('Design limits'));
+    if(!issueCard || !issueCard.textContent.includes('OUT_OF_EXPORT_SCOPE'))throw Error('Out-of-scope paragraph not traced');
+    const config=doc.querySelector('.main-tab-btn[data-tab="settings"]');
+    const macro=doc.querySelector('.main-tab-btn[data-tab="record"]');
+    if(!config || config.textContent.trim()!=='Config' || !macro)throw Error('Legacy tabs changed');
+    // F5: nested Word table rows must not become outer table rows.
+    const nestedXml='<w:document xmlns:w="'+ns+'"><w:body>'+
+      '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>OUTER</w:t></w:r></w:p>'+
+      '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>INNER</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'+
+      '</w:tc></w:tr></w:tbl></w:body></w:document>';
+    const nestedDoc=new frame.DOMParser().parseFromString(nestedXml,'application/xml');
+    const outer=nestedDoc.getElementsByTagNameNS(ns,'tbl')[0];
+    const actualGrid=frame.eval('new DocxParser()')._extractTableGrid(outer);
+    if(actualGrid.length!==1 || actualGrid[0][0]!=='OUTER') throw Error('F5 nested table leaked into outer grid');
+    const nestedSource=frame.eval('SourceInventory').build(nestedDoc,[]);
+    // Real-browser regression for F3: tracked insertion must not disappear.
+    const revisedXml='<w:document xmlns:w="'+ns+'"><w:body><w:p>'+
+        '<w:ins><w:r><w:t>INSERTED_TEXT</w:t></w:r></w:ins>'+
+        '</w:p></w:body></w:document>';
+    const revisedDoc=new frame.DOMParser().parseFromString(revisedXml,'application/xml');
+    const revised=frame.eval('SourceInventory').build(revisedDoc,[]);
+    if(revised.occurrences[0].textOriginal!=='INSERTED_TEXT' || !revised.hasCoverageExceptions)
+      throw Error('F3 tracked insertion is not inventoried and flagged');
+    // F4: DOMParser cannot certify visual visibility under CSS stylesheets.
+    const hiddenHtml='<style>.concealed{display:none}</style>'+
+      '<table><tr><td class="concealed">INVISIBLE_CSS_TEXT</td></tr></table>';
+    const hiddenOutput=frame.eval('OutputInventory').parse(hiddenHtml,'companion');
+    if(!hiddenOutput.visibilityRisk || hiddenOutput.visibilityVerified)
+      throw Error('F4 CSS-hidden text incorrectly certified visible');
+    if(!nestedSource.hasCoverageExceptions || !nestedSource.diagnostics.some(x=>x.feature==='nestedTable'))
+      throw Error('F5 nested-table limitation not declared');
+    // Uploaded R5_after HTML structure represented by invented values.
+    // Original t2 is intentionally absent; anchors t1/t3 must not ordinal-shift.
+    const refinedFixture='<html><body><header><h1>After Batch</h1>'+
+      '<div class="doc-meta">Filter: Only Tables with data (2 tables)</div></header>'+
+      '<section class="table-section" id="t1"><h3>#1</h3><table class="data-table">'+
+      '<thead><tr><th class="row-idx">H</th><th>Group</th><th>Material</th></tr></thead>'+
+      '<tbody><tr><td class="row-idx" title="Source row 2">2</td>'+
+      '<td class="group-cell">Pipe</td><td>ASTM A106</td></tr></tbody></table></section>'+
+      '<section class="table-section" id="t3"><h3>#3</h3><table class="data-table">'+
+      '<thead><tr><th class="row-idx">H</th><th>Code</th></tr></thead>'+
+      '<tbody><tr><td class="row-idx" title="Source row 1">1</td><td>ALPHA</td></tr></tbody></table></section>'+
+      '</body></html>';
+    const refined=frame.eval('OutputInventory').parse(refinedFixture,'companion');
+    if(refined.reportProfile!=='R5_REFINED_TABLES' || refined.tableCount!==2 ||
+        refined.presentation.rowIndexCells!==4 ||
+        refined.presentation.derivedGroupCells!==2)
+      throw Error('Companion report display-only column handling failed');
+    const alpha=refined.occurrences.find(x=>x.text==='ALPHA');
+    if(!alpha || alpha.tableIndex!==2 || alpha.rowIndex!==1 || alpha.colIndex!==0)
+      throw Error('t3 source table/row hints corrupted by omitted t2');
+    if(refined.occurrences.some(x=>x.text==='Pipe' || x.text==='2' || x.text==='1'))
+      throw Error('Display-only group/index text leaked into audit output');
+    // G1: report omissions, source paragraphs and empty cell identities
+    // remain visible as dispositions, never as verified preservation.
+    const docmodel={
+       occurrences:[
+         {sourceId:'note',sourcePath:'/body/tbl[2]/tr[1]/tc[1]',sourcePart:'word/document.xml',
+          kind:'cell',tableId:'t2id',rowIndex:0,colIndex:0,textOriginal:'Notes',coverage:'SUPPORTED'},
+         {sourceId:'sourcepara',sourcePath:'/body/p[1]',sourcePart:'word/document.xml',
+          kind:'paragraph',textOriginal:'Requirements',coverage:'SUPPORTED'},
+         {sourceId:'emptycell',sourcePath:'/body/tbl[1]/tr[1]/tc[1]',sourcePart:'word/document.xml',
+          kind:'cell',tableId:'t1id',rowIndex:0,colIndex:0,textOriginal:'',structuralEmpty:true,coverage:'SUPPORTED'}
+       ],
+       tables:[{tableId:'t1id',parentTableId:null},{tableId:'t2id',parentTableId:null}],
+       diagnostics:[{part:'word/header1.xml',feature:'Unsupported header story'}]
+    };
+    const omittedOutput={mode:'companion',reportProfile:'R5_REFINED_TABLES',
+        sourceTableNumberHints:[1],reportFilterClaim:'Only Tables with data',
+        occurrences:[{outputId:'outputExtra',kind:'cell',text:'Unexpected target',tableIndex:0,rowIndex:1,colIndex:0}]};
+    const omissions=frame.eval('DiffEngine').compare(docmodel,{events:[]},omittedOutput,{});
+    if(omissions.statuses.OMITTED_UNVERIFIED!==1 ||
+       omissions.statuses.OUT_OF_EXPORT_SCOPE!==1 ||
+       omissions.statuses.EMPTY_STRUCTURE_UNVERIFIED!==1 ||
+       omissions.qualified!==false)throw Error('G1 source disposition regression');
+    // F7: standalone reports must render orphan outputs and coverage exceptions.
+    const trial=JSON.parse(JSON.stringify(frame.eval('appState.audit')));
+    trial.meta.exportArtifacts=[{mode:'individual',selectedIndices:[0],preparedBytesVerified:true,
+      files:[{filename:'PROOF_FILE_777.csv',sha256:'a'.repeat(64),byteLength:100}]}];
+    trial.result.extraOutput=[{outputId:'ORPHAN_OUT_777',text:'ORPHAN_TEXT_777'}];
+    trial.result.diagnostics=[{part:'word/header1.xml',feature:'HEADER_EXCEPTION_777'}];
+    const report=frame.eval('AuditExport').standalone(trial);
+    const preview=document.createElement('iframe');
+    document.body.appendChild(preview);
+    preview.srcdoc=report;
+    await new Promise((resolve,reject)=>{
+      preview.addEventListener('load',resolve,{once:true});
+      setTimeout(()=>reject(Error('Report iframe load timeout')),5000);
+    });
+    const reportBody=preview.contentDocument.body.textContent;
+    if(!reportBody.includes('Original DOCX-to-output fidelity NOT VERIFIED'))
+      throw Error('F6 offline report omitted exported-artifact limitation');
+    if(!reportBody.includes('PROOF_FILE_777.csv') || !reportBody.includes('prepared bytes verified: true'))
+      throw Error('F6 offline report did not display actual export attestation');
+    if(!reportBody.includes('ORPHAN_TEXT_777') || !reportBody.includes('HEADER_EXCEPTION_777'))
+      throw Error('F7 standalone viewer did not render orphan output and coverage exception');
+    preview.remove();
+    status.textContent='PASS: Browser DOCX extraction, F0-F7 negative cases, offline viewer and tab compatibility';
+  } catch(e) {
+    status.textContent='FAIL: '+(e&&e.stack||e);
+  }
+}
+document.getElementById('app').addEventListener('load',smoke,{once:true});
+</script></body></html>

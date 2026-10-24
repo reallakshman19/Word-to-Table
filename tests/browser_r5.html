@@ -1,0 +1,71 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Repository R5 original audit</title></head>
+<body><pre id="r5-result">RUNNING</pre><iframe id="app" src="../index.html" style="width:1050px;height:750px"></iframe>
+<script>
+'use strict';
+document.getElementById('app').addEventListener('load',async()=>{
+ const result=document.getElementById('r5-result'),frame=document.getElementById('app').contentWindow;
+ try {
+    await new Promise(r=>setTimeout(r,1000));
+    const oracle=await (await fetch('./.r5_oracle.json')).json();
+    const raw=await (await fetch('../R5.docx')).arrayBuffer();
+    if(raw.byteLength<200000)throw Error('R5 fixture unexpectedly tiny');
+    // JSZip validates typed arrays by realm. Supply a Uint8Array owned by
+    // the application's iframe, not the harness's parent ArrayBuffer.
+    const inAppBytes=new frame.Uint8Array(raw);
+    const real=await frame.eval('SourceInventory').fromArrayBuffer(inAppBytes);
+    if(real.occurrences.length!==oracle.supportedOccurrenceCount)
+       throw Error('R5 source occurrence mismatch: JS='+real.occurrences.length+' independent='+oracle.supportedOccurrenceCount);
+    if(real.tables.length!==oracle.tableCount)
+       throw Error('R5 source table count mismatch: JS='+real.tables.length+' independent='+oracle.tableCount);
+    if(!real.occurrences.some(x=>x.textOriginal.includes('\u2011')))
+       throw Error('R5 nonbreaking hyphens absent from source inventory');
+    const hash=await frame.auditSha256(raw);
+    if(hash!==oracle.sourceSha256)throw Error('R5 fixture SHA mismatch');
+    // Run actual app extraction, not just the source inventory.
+    const file=new frame.File([inAppBytes],'R5.docx',{
+      type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+    const input=frame.document.getElementById('file_upload'),dt=new frame.DataTransfer();
+    dt.items.add(file);input.files=dt.files;frame.onDocxChanged();
+    await frame.extractTables();await frame.runDiffAndQA();
+    const state=frame.eval('appState');
+    if(!state.audit)throw Error('App did not produce R5 QA audit');
+    if(state.audit.result.sourceTotal!==oracle.supportedOccurrenceCount)
+       throw Error('R5 app audit did not preserve full inventory count');
+    if(state.audit.result.dispositionCoverage!==1)throw Error('R5 disposition accounting mismatch');
+    if(state.audit.result.qualified)throw Error('R5 self-generated HTML improperly certified source fidelity');
+    if(state.audit.meta.sourceSha256!==oracle.sourceSha256)throw Error('R5 audited wrong source bytes');
+    if(state.audit.meta.exportArtifactVerified!==false)throw Error('R5 export bytes prematurely attested');
+    // F6: attest actual exported bytes for every R5 table, not just a synthetic table.
+    const allIndices=state.tables.map((_,i)=>i);
+    const exporter=frame.eval('ArtifactExport');
+    const mismatches=state.tables.map((t,i)=>{
+      const a=exporter.csvRows(t.csv),e=exporter.grid(t);
+      if(exporter.equalRows(a,e))return null;
+      let row=0;
+      while(row<Math.min(a.length,e.length) && JSON.stringify(a[row])===JSON.stringify(e[row]))row++;
+      return {table:i,rowsActual:a.length,rowsExpected:e.length,row,
+        actualWidth:a[row]?.length||0,expectedWidth:e[row]?.length||0};
+    }).filter(Boolean);
+    // Expected evidence: cached CSV is allowed to be stale, but actual newly
+    // serialized export must reflect selected grid and report regeneration.
+    const legacyMismatchCount=mismatches.length;
+    const csv=await exporter.prepare(state.tables,allIndices,'individual',false,state.sourceLedger);
+    const xlsx=await exporter.prepare(state.tables,allIndices,'combined',false,state.sourceLedger);
+    if(csv.manifest.files.filter(f=>f.legacyCsvRegenerated).length!==legacyMismatchCount)
+       throw Error('R5 stale cached CSV count not accounted for');
+    if(csv.files.length!==state.tables.length || xlsx.manifest.files[0].sheets.length!==state.tables.length)
+       throw Error('R5 selected-table CSV/XLSX file or sheet inventory mismatch');
+    if(!csv.manifest.preparedBytesVerified || !xlsx.manifest.preparedBytesVerified)
+       throw Error('R5 actual selected export bytes failed parity verification');
+    if(csv.manifest.originalDocxFidelityVerified || xlsx.manifest.originalDocxFidelityVerified)
+       throw Error('R5 export claimed original source fidelity');
+    result.textContent='PASS: repo R5 DOCX SHA '+oracle.sourceSha256+
+       ' · independent source occurrences '+oracle.supportedOccurrenceCount+
+       ' · OOXML tables '+oracle.tableCount+
+       ' · extracted tables '+state.tables.length+
+       ' · CSV artifacts '+csv.files.length+' · stale cached CSV regenerated '+legacyMismatchCount+
+       ' · XLSX sheets '+xlsx.manifest.files[0].sheets.length+
+       ' · source-fidelity qualified=false; R5_after companion NOT_RUN';
+ }catch(e){result.textContent='FAIL: '+(e.stack||e);}
+},{once:true});
+</script></body></html>

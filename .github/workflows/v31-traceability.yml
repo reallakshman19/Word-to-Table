@@ -1,0 +1,98 @@
+name: v3.1 traceability negative tests
+on:
+  push:
+    branches: [codex/v31-source-traceability-20261024]
+  pull_request:
+    paths:
+      - "js/**"
+      - "index.html"
+      - "tests/**"
+      - ".github/workflows/v31-traceability.yml"
+jobs:
+  negative-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Node version
+        run: node --version
+      - name: Syntax-check changed JavaScript
+        run: |
+          for file in js/source_inventory.js js/output_inventory.js js/conversion_ledger.js js/diff_engine.js js/audit_export.js js/artifact_export.js js/diff_tab.js js/app.js js/docx_parser.js js/settings_tab.js tests/diff_engine.test.js tests/audit_export.test.js tests/source_inventory.test.js tests/output_inventory.test.js tests/artifact_export.test.js; do
+            node --check "$file"
+          done
+      - name: Run occurrence and export negative cases
+        run: node --test tests/diff_engine.test.js tests/audit_export.test.js tests/source_inventory.test.js tests/output_inventory.test.js tests/artifact_export.test.js
+      - name: Assert tab and legacy macro anchors
+        run: |
+          node -e "const f=require('fs');const h=f.readFileSync('index.html','utf8');const a=f.readFileSync('js/app.js','utf8');if(!h.includes('data-tab=\"diffhtml\"')||!h.includes('data-tab=\"record\"')||!a.includes('renderBatchTab()'))process.exit(1)"
+      - name: Syntax-check inline browser harness scripts
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for name in ('tests/browser_harness.html', 'tests/browser_r5.html'):
+              html=Path(name).read_text(encoding='utf-8')
+              scripts=re.findall(r'<script(?:\s[^>]*)?>([\s\S]*?)</script>',html,re.I)
+              if not scripts: raise SystemExit('No inline script: '+name)
+              for i,script in enumerate(scripts):
+                  Path(f'/tmp/{Path(name).stem}_{i}.js').write_text(script,encoding='utf-8')
+          PY
+          for f in /tmp/browser_harness_*.js /tmp/browser_r5_*.js; do node --check "$f"; done
+      - name: Browser smoke (static, nonpublishing Chromium)
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/v31-http.log 2>&1 &
+          sleep 2
+          CHROME="$(command -v google-chrome || command -v chromium || true)"
+          if [ -z "$CHROME" ]; then echo 'Chrome/Chromium unavailable'; exit 1; fi
+          # A headless instance may return while a nested iframe still says
+          # RUNNING. Retry only that incomplete observation, never a true FAIL.
+          COMPLETE=0
+          for attempt in 1 2 3; do
+            timeout 100 "$CHROME" --headless --no-sandbox --disable-dev-shm-usage --disable-gpu --no-first-run \
+              --user-data-dir="/tmp/v31-chrome-$attempt" --virtual-time-budget=70000 \
+              --dump-dom http://127.0.0.1:8765/tests/browser_harness.html \
+              >/tmp/v31-browser-dom.html 2>/tmp/v31-browser-stderr.txt || true
+            if grep -q '<pre id="test-result">FAIL:' /tmp/v31-browser-dom.html; then
+              grep -o '<pre id="test-result">FAIL:[^<]*' /tmp/v31-browser-dom.html
+              exit 1
+            fi
+            if grep -q '<pre id="test-result">PASS: Browser DOCX extraction' /tmp/v31-browser-dom.html; then
+              grep -o '<pre id="test-result">PASS: Browser DOCX extraction[^<]*' /tmp/v31-browser-dom.html
+              COMPLETE=1
+              break
+            fi
+            echo "Chromium rendered no completed verdict (attempt $attempt); retrying."
+          done
+          if [ "$COMPLETE" -ne 1 ]; then
+            echo 'No real rendered PASS marker after three attempts'
+            grep -o '<pre id="test-result">[^<]*' /tmp/v31-browser-dom.html || true
+            exit 1
+          fi
+      - name: Retain public R5 fixture for private local comparison
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-r5-source
+          path: R5.docx
+          retention-days: 1
+      - name: Independent R5 source oracle (checked-in original DOCX)
+        run: |
+          python3 tests/r5_source_oracle.py > tests/.r5_oracle.json
+          cat tests/.r5_oracle.json
+          python3 -m json.tool tests/.r5_oracle.json >/dev/null
+      - name: Real R5 DOCX static browser source-inventory rehearsal (not R5_after)
+        run: |
+          python3 -m http.server 8876 --bind 127.0.0.1 >/tmp/r5-http.log 2>&1 &
+          sleep 2
+          CHROME="$(command -v google-chrome || command -v chromium || true)"
+          test -n "$CHROME" || exit 1
+          timeout 140 "$CHROME" --headless --no-sandbox --disable-dev-shm-usage --disable-gpu --virtual-time-budget=70000 \
+            --dump-dom http://127.0.0.1:8876/tests/browser_r5.html >/tmp/v31-r5-dom.html 2>/tmp/v31-r5-stderr.txt
+          grep -q '<pre id="r5-result">PASS: repo R5 DOCX SHA' /tmp/v31-r5-dom.html || {
+            grep -o '<pre id="r5-result">FAIL:[^<]*' /tmp/v31-r5-dom.html || true
+            tail -60 /tmp/v31-r5-stderr.txt
+            exit 1
+          }
+          grep -o '<pre id="r5-result">PASS: repo R5 DOCX SHA[^<]*' /tmp/v31-r5-dom.html

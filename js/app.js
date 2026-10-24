@@ -23,7 +23,14 @@ const appState = {
     activeTableIndex: -1,
     selectedTableIndices: new Set(), // For multi-select operations
     recording: false,
-    memory: []
+    memory: [],
+    sourceLedger: null,
+    sourceSha256: null,
+    companionHtml: null,
+    audit: null,
+    runEpoch: 0,
+    conversion: null,
+    exportManifests: []
 };
 
 // ═══════════ Mode Detection ═══════════
@@ -78,6 +85,11 @@ function updateModeUI() {
 async function extractTables() {
     const fileInput = document.getElementById('file_upload');
     const file = fileInput.files[0];
+    const epoch = ++appState.runEpoch;
+    appState.audit = null;
+    appState.sourceLedger = null;
+    appState.conversion = null;
+    appState.exportManifests = [];
 
     if (!file) {
         showStatus('Please select a .docx file first', 'error');
@@ -85,7 +97,7 @@ async function extractTables() {
     }
 
     if (!file.name.toLowerCase().endsWith('.docx')) {
-        showStatus('Only .docx files are supported', 'error');
+        showStatus('Legacy .doc is unsupported. Convert .doc to .docx first.', 'error');
         return;
     }
 
@@ -95,6 +107,11 @@ async function extractTables() {
     showStatus('Extracting tables...', 'working');
 
     try {
+        // The source inventory is independent of the extracted table model.
+        const sourceBytes = await file.arrayBuffer();
+        const sourceLedger = await SourceInventory.fromArrayBuffer(sourceBytes);
+        const sourceHash = await auditSha256(sourceBytes);
+        if (epoch !== appState.runEpoch) return;
         let result;
         if (appState.mode === 'local') {
             result = await extractViaServer(file);
@@ -102,8 +119,12 @@ async function extractTables() {
             result = await extractViaBrowser(file);
         }
 
+        if (epoch !== appState.runEpoch) return;
         if (result.success) {
+            appState.sourceLedger = sourceLedger;
+            appState.sourceSha256 = sourceHash;
             loadResultIntoState(result, file.name);
+            appState.conversion = ConversionLedger.build(sourceLedger, appState.tables, appState.mode);
 
             // Post-Processing: Smart Header Naming & Validator
             // Check 'appSettings' once
@@ -185,6 +206,8 @@ function loadResultIntoState(result, filename) {
     appState.tables = (result.tables || []).map((t, i) => ({
         index: i,
         pageNumber: t.pageNumber || 1,
+        tableIndex: t.tableIndex || (i + 1),
+        headerRow: Number.isInteger(t.headerRow) ? t.headerRow : null,
         tableName: t.tableName || `Table_${i + 1}`,
         confidence: t.confidence || 'low',
         approved: (typeof appSettings !== 'undefined' && appSettings.autoApprove) || (t.confidence === 'high' || t.confidence === 'Rule-Based'),
@@ -317,6 +340,7 @@ function renderTab(name) {
     switch (name) {
         case 'validator': if (typeof validator !== 'undefined' && typeof validator.renderTab === 'function') validator.renderTab(); break;
         case 'results': if (typeof renderResultsTab === 'function') renderResultsTab(); break;
+        case 'diffhtml': DiffTab.render(); break;
         case 'record': renderBatchTab(); break;
         case 'output':
             if (typeof OutputTab !== 'undefined') OutputTab.render();
@@ -678,3 +702,80 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     console.log("App Version: v2.4.0 loaded");
 });
+
+
+// ═══════════ Source-traceable QA ═══════════
+// Every async response is tied to the source selection epoch.
+function onDocxChanged() {
+    appState.runEpoch++;
+    appState.audit = null;
+    appState.sourceLedger = null;
+    appState.sourceSha256 = null;
+    appState.conversion = null;
+    appState.exportManifests = [];
+    appState.companionHtml = null;
+    const companionInput = document.getElementById('companion_html_upload');
+    if (companionInput) companionInput.value = '';
+    showStatus('New DOCX selected; prior comparison and companion invalidated.', 'working');
+}
+async function auditSha256(value) {
+    if (typeof crypto === 'undefined' || !crypto.subtle) return null;
+    const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
+    const hash = await crypto.subtle.digest('SHA-256',bytes);
+    return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function handleCompanionHtmlUpload(input) {
+    const file=input && input.files && input.files[0];
+    if (!file) return;
+    if (!/\.html?$/i.test(file.name)) {
+        showStatus('Please choose an .html or .htm companion.', 'error');
+        input.value='';return;
+    }
+    const epoch=appState.runEpoch;
+    try {
+        const content=await file.text();
+        if(epoch!==appState.runEpoch)return;
+        appState.companionHtml={filename:file.name,content};
+        appState.audit=null;
+        showStatus('Companion HTML loaded. Run Diff & QA to compare.', 'success');
+    } catch(e) {if(epoch===appState.runEpoch)showStatus('Companion read failed: '+e.message,'error');}
+}
+async function runDiffAndQA() {
+    if (!appState.sourceLedger) {
+        showStatus('Extract a supported DOCX first, including paragraph-only documents.','error');return;
+    }
+    const epoch=appState.runEpoch;
+    try {
+        showStatus('Building traceability audit...', 'working');
+        const conversion=ConversionLedger.build(appState.sourceLedger,appState.tables,appState.mode);
+        const companion=appState.companionHtml;
+        const html=companion ? companion.content : conversion.html;
+        const mode=companion?'companion':'generated';
+        const output=OutputInventory.parse(html,mode);
+        const result=DiffEngine.compare(appState.sourceLedger,conversion,output,appSettings);
+        const htmlHash=await auditSha256(html);
+        const configCopy={normalizeWhitespace:appSettings.normalizeWhitespace,caseInsensitive:appSettings.caseInsensitive};
+        const configHash=await auditSha256(JSON.stringify(configCopy));
+        if(epoch!==appState.runEpoch)return;
+        appState.audit={
+            schemaVersion:1,
+            meta:{filename:appState.filename,mode,sourceSha256:appState.sourceSha256,
+                targetSha256:htmlHash,configHash,engine:'v3.1.0',timestamp:new Date().toISOString(),
+                sourceCoverage:appState.sourceLedger.hasCoverageExceptions?'EXCEPTIONS':'DECLARED_SCOPE_ONLY',
+                conversionVerified:conversion.verified, exportArtifactVerified:false,
+                exportArtifacts:appState.exportManifests.slice(),
+                artifactScope:companion?'UPLOADED_COMPANION_HTML':'RECONSTRUCTED_TABLE_HTML',
+                targetFilename:companion?companion.filename:'generated HTML'},
+            sourceLedger:appState.sourceLedger,
+            conversionLedger:conversion,
+            outputLedger:output,
+            result
+        };
+        showStatus('QA completed: '+result.sourceTotal+' source occurrences, '+result.statuses.MISSING+
+            ' missing, '+result.statuses.AMBIGUOUS+' ambiguous. Review exceptions.', 'success');
+        switchMainTab('diffhtml');
+    } catch(err) {
+        if(epoch===appState.runEpoch) showStatus('QA failed: '+err.message,'error');
+        console.error('QA error',err);
+    }
+}
