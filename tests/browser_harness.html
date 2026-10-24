@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>v3.1 smoke test</title></head>
+<body><pre id="test-result">RUNNING</pre><iframe id="app" src="../index.html" style="width:1100px;height:800px"></iframe>
+<script>
+'use strict';
+async function smoke() {
+  const status=document.getElementById('test-result');
+  try {
+    const frame=document.getElementById('app').contentWindow;
+    await new Promise(resolve=>setTimeout(resolve,2500));
+    if(!frame.JSZip || !frame.SourceInventory) throw Error('Missing browser dependencies');
+    const ns='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+    function para(text) {
+      return '<w:p><w:r><w:t>'+text+'</w:t></w:r></w:p>';
+    }
+    function cell(text) {return '<w:tc>'+para(text)+'</w:tc>';}
+    const xml='<?xml version="1.0"?>'+
+      '<w:document xmlns:w="'+ns+'"><w:body>'+para('Design limits')+
+      '<w:tbl><w:tr>'+cell('Name')+cell('Quantity')+'</w:tr>'+
+      '<w:tr>'+cell('ABC')+cell('1')+'</w:tr></w:tbl></w:body></w:document>';
+    const zip=new frame.JSZip();
+    zip.file('word/document.xml',xml);
+    const array=await zip.generateAsync({type:'uint8array'});
+    const file=new frame.File([array],'synthetic.docx',{
+      type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+    const input=frame.document.getElementById('file_upload');
+    const dt=new frame.DataTransfer();dt.items.add(file);input.files=dt.files;
+    frame.onDocxChanged();
+    await frame.extractTables();
+    await frame.runDiffAndQA();
+    const doc=frame.document;
+    const cards=doc.querySelectorAll('#tab-diffhtml .audit-record');
+    const summary=doc.getElementById('tab-diffhtml').textContent;
+    if(cards.length!==5)throw Error('Expected 5 source occurrences, got '+cards.length);
+    if(!summary.includes('MISSING'))throw Error('Missing paragraph not detected');
+    if(!summary.includes('PRESERVED_EXACT'))throw Error('Preserved cells not detected');
+    const issueCard=Array.from(cards).find(c=>c.textContent.includes('Design limits'));
+    if(!issueCard || !issueCard.textContent.includes('MISSING'))throw Error('Dropped paragraph not traced');
+    const config=doc.querySelector('.main-tab-btn[data-tab="settings"]');
+    const macro=doc.querySelector('.main-tab-btn[data-tab="record"]');
+    if(!config || config.textContent.trim()!=='Config' || !macro)throw Error('Legacy tabs changed');
+    status.textContent='PASS: Browser DOCX extraction, source inventory, 5 QA occurrences and tab compatibility';
+  } catch(e) {
+    status.textContent='FAIL: '+(e&&e.stack||e);
+  }
+}
+document.getElementById('app').addEventListener('load',smoke,{once:true});
+</script></body></html>
