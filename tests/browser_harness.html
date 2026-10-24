@@ -93,6 +93,8 @@ async function smoke() {
       throw Error('F5 nested-table limitation not declared');
     // F7: standalone reports must render orphan outputs and coverage exceptions.
     const trial=JSON.parse(JSON.stringify(frame.eval('appState.audit')));
+    trial.meta.exportArtifacts=[{mode:'individual',selectedIndices:[0],preparedBytesVerified:true,
+      files:[{filename:'PROOF_FILE_777.csv',sha256:'a'.repeat(64),byteLength:100}]}];
     trial.result.extraOutput=[{outputId:'ORPHAN_OUT_777',text:'ORPHAN_TEXT_777'}];
     trial.result.diagnostics=[{part:'word/header1.xml',feature:'HEADER_EXCEPTION_777'}];
     const report=frame.eval('AuditExport').standalone(trial);
@@ -106,6 +108,8 @@ async function smoke() {
     const reportBody=preview.contentDocument.body.textContent;
     if(!reportBody.includes('Original DOCX-to-output fidelity NOT VERIFIED'))
       throw Error('F6 offline report omitted exported-artifact limitation');
+    if(!reportBody.includes('PROOF_FILE_777.csv') || !reportBody.includes('prepared bytes verified: true'))
+      throw Error('F6 offline report did not display actual export attestation');
     if(!reportBody.includes('ORPHAN_TEXT_777') || !reportBody.includes('HEADER_EXCEPTION_777'))
       throw Error('F7 standalone viewer did not render orphan output and coverage exception');
     preview.remove();

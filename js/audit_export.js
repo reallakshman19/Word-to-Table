@@ -49,6 +49,24 @@ const AuditExport = (() => {
             'use strict';
             const data=JSON.parse(document.getElementById('audit-data').textContent);
             const rows=data.viewRows||[];
+            const proofs=data.meta?.exportArtifacts||[];
+            const holder=document.getElementById('export-proofs');
+            if(proofs.length){
+                const heading=document.createElement('h2');heading.textContent='Prepared Output artifacts';holder.appendChild(heading);
+                for(const proof of proofs){
+                    const d=document.createElement('article');
+                    d.textContent=proof.mode+' · selection: '+proof.selectedIndices.join(',')+
+                        ' · prepared bytes verified: '+Boolean(proof.preparedBytesVerified)+
+                        ' · downloaded/disk bytes: NOT VERIFIED'+
+                        ' · original DOCX fidelity: NOT VERIFIED';
+                    holder.appendChild(d);
+                    for(const f of proof.files||[]){
+                        const line=document.createElement('div');line.className='line';
+                        line.textContent=f.filename+' · SHA-256 '+f.sha256+' · '+f.byteLength+' bytes';
+                        d.appendChild(line);
+                    }
+                }
+            }
             const status=document.getElementById('status');
             status.textContent='Source '+data.result.sourceTotal+' · Extra output '+data.result.extraOutput.length+
                 ' · Coverage exceptions '+data.result.diagnostics.length+
@@ -94,7 +112,7 @@ const AuditExport = (() => {
             '<label>Status <select id="status-filter">'+options.map(x=>'<option>'+escapeHtml(x)+'</option>').join('')+
             '</select></label> <input id="search" aria-label="Search audit" placeholder="Search source, output or ID">' +
             '<button id="prev">Previous</button> <span id="page-info"></span> <button id="next">Next</button></header>' +
-            '<main id="records"></main><script type="application/json" id="audit-data">' +
+            '<section id="export-proofs"></section><main id="records"></main><script type="application/json" id="audit-data">' +
             safeJson({...audit,viewRows:reportRows(audit)})+'</script><script>('+client.toString()+')();</script></body></html>';
     }
     function download(audit, kind) {
