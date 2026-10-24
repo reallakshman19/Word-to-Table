@@ -1,0 +1,34 @@
+#tab-diffhtml{background:#0c1018;min-height:calc(100vh - 140px);color:#dce7f7;padding:26px max(24px,calc((100vw - 1320px)/2)) 48px;font-size:13px}
+#tab-diffhtml .xy-panel{padding:0;margin:0 0 22px}
+.xy-workspace-header{display:flex;justify-content:space-between;align-items:center;padding:22px 24px;background:linear-gradient(115deg,#101c31,#1b1740);border:1px solid #28334a;border-radius:14px;gap:20px}
+.xy-workspace-header h2{font-size:23px;letter-spacing:-.5px;margin:5px 0 8px}
+.xy-workspace-header p,.xy-audit-heading p{color:#92a4be;font-size:12px;line-height:1.6}
+.xy-eyebrow{font-size:10px;font-weight:750;letter-spacing:1.5px;color:#93a9d6}
+#tab-diffhtml button,#tab-diffhtml input,#tab-diffhtml select{border:1px solid #30405a;background:#172237;color:#dbe7fa;border-radius:7px;padding:8px 11px;font:inherit;cursor:pointer}
+#tab-diffhtml button:hover{border-color:#657cff;background:#213453}
+#tab-diffhtml button:focus-visible,#tab-diffhtml input:focus-visible{outline:2px solid #9aafff;outline-offset:3px}
+#tab-diffhtml .xy-primary{background:#4f46e5;border-color:#746cff;color:#fff;font-weight:650}
+.xy-workspace-actions{display:flex;flex-wrap:wrap;gap:8px;max-width:620px;align-items:center;justify-content:flex-end}
+.xy-upload-button{display:inline-flex;align-items:center;gap:6px;background:#1b2940;border:1px solid #3b4d68;border-radius:7px;padding:8px 12px;cursor:pointer}
+.xy-file-input{position:absolute;width:1px!important;height:1px;opacity:0;overflow:hidden}
+#xy-message{color:#93a4bc;font-size:12px;padding:10px 3px}
+.xy-audit-heading{display:flex;align-items:center;justify-content:space-between;margin:25px 0 18px;gap:15px}
+.xy-audit-heading h2{font-size:20px;margin:5px 0}
+.xy-review-tag{color:#eab457;background:#302617;border:1px solid #674c24;border-radius:20px;font-size:11px;padding:6px 11px;white-space:nowrap}
+.xy-stat-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:18px 0}
+.xy-stat-card{background:#111a2b;border:1px solid #28354e;border-radius:11px;padding:17px 17px 15px;display:flex;flex-direction:column;gap:9px}
+.xy-stat-card label{text-transform:uppercase;letter-spacing:.5px;font-size:10px;color:#9aadc8}.xy-stat-card strong{font-size:28px;letter-spacing:-.7px;color:#f2f7ff}.xy-stat-card small{font-size:10px;color:#8a9cb5;line-height:1.4}
+.xy-stat-card.observed{border-color:#155b4d;background:#0c1b1c}.xy-stat-card.observed strong{color:#34d8a4}.xy-stat-card.candidate{border-color:#244f7b;background:#0b1827}.xy-stat-card.candidate strong{color:#4ec9ff}.xy-stat-card.missing{border-color:#6f2639;background:#231019}.xy-stat-card.missing strong{color:#ff6682}.xy-stat-card.unsupported{border-color:#614d23;background:#211b0f}.xy-stat-card.unsupported strong{color:#edbb54}
+.xy-audit-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:8px;background:#111a2a;border:1px solid #26344c;border-radius:11px;padding:12px;margin:16px 0}
+.xy-filter-pills{display:flex;gap:5px;flex-wrap:wrap;flex:1}
+#tab-diffhtml .xy-filter-pills button{background:#1c2a3d;border-color:transparent;font-size:11px;padding:7px 9px}.xy-filter-pills span{opacity:.7;margin-left:3px}
+#tab-diffhtml .xy-filter-pills button[aria-pressed=true]{background:#2759df;color:white}
+#xy-search{width:240px;max-width:100%;background:#0c1423!important;font-size:11px!important}
+.xy-audit-scope{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 0;color:#9ab0cd;font-size:11px}.xy-audit-scope label{display:flex;gap:7px;align-items:center}#xy-visible{margin-left:auto;color:#99aac3}
+.xy-records{display:flex;flex-direction:column;gap:12px}.xy-record-card{background:#111a2b;border:1px solid #28354a;border-left:3px solid #7b91b1;border-radius:11px;padding:17px 20px}
+.xy-record-card header{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:14px;font-size:12px}.xy-record-card.missing{border-left-color:#ff527a}.xy-record-card.changed{border-left-color:#eba832}.xy-record-card.observed{border-left-color:#19cba0}.xy-record-card.unsupported{border-left-color:#be8cf4}.xy-record-card.candidate{border-left-color:#4fbdff}
+.xy-status-chip{font-size:9px;text-transform:uppercase;letter-spacing:.3px;padding:4px 7px;border-radius:5px;background:#26364e;color:#c5d9f9;white-space:nowrap}.xy-status-chip.missing{background:#4a192c;color:#ff8ca8}.xy-status-chip.observed{background:#0c3e34;color:#62e0b7}.xy-status-chip.changed{background:#4c3514;color:#ffd07a}.xy-status-chip.unsupported{background:#38224b;color:#deb3ff}
+.xy-compare-cells{display:grid;grid-template-columns:1fr 1fr;gap:12px}.xy-compare-cells>div{background:#080f1d;border:1px solid #253047;border-radius:7px;padding:12px;min-width:0}.xy-compare-cells>div:nth-child(2){background:#0d1c2d;border-color:#244766}.xy-compare-cells label{font-size:9px;letter-spacing:.7px;color:#9ab7e2}.xy-compare-cells pre{font:12px/1.65 ui-monospace,monospace;color:#e3edff;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:7px;max-height:250px;overflow:auto}.xy-muted{color:#7e8fa8;font-style:italic}
+.xy-record-card footer{color:#98abc5;font-size:11px;line-height:1.6;margin-top:11px}.xy-record-card details{margin-top:8px}.xy-record-card details summary{cursor:pointer;color:#6f9fe9}.xy-record-card code,.xy-record-card details pre{overflow-wrap:anywhere;white-space:pre-wrap;font-size:10px}.xy-record-card details pre{padding:12px;background:#080e1c;border-radius:6px;margin-top:8px}
+.xy-audit-bottom{display:flex;gap:8px;margin:20px 0;flex-wrap:wrap}.xy-evidence-details{border:1px solid #29364c;background:#111a2a;border-radius:9px;padding:14px;color:#9fb1c9;font-size:12px}.xy-evidence-details summary{cursor:pointer}.xy-evidence-details pre{font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:12px}.xy-empty{text-align:center;padding:60px 20px;border:1px dashed #304361;border-radius:12px;color:#a4b6d2}.xy-empty p{margin-top:10px;color:#8397b5}
+@media(max-width:900px){.xy-workspace-header{align-items:flex-start;flex-direction:column}.xy-workspace-actions{justify-content:flex-start}.xy-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.xy-stat-grid>div:first-child{grid-column:span 2}.xy-compare-cells{grid-template-columns:1fr}#tab-diffhtml{padding:18px 12px}.xy-audit-heading{align-items:flex-start}.xy-record-card{padding:15px 12px}.xy-record-card header{align-items:flex-start}}

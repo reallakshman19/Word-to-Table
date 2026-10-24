@@ -37,3 +37,17 @@ Docs/R5.doc
 # Batch files (local only)
 build_executable.bat
 run_desktop.bat
+
+# Scratch files (builder local temporary scripts)
+scratch/
+
+# Batch generated HTML outputs (contain real document content)
+*_before.html
+*_after.html
+*_compare.html
+
+# Owner-supplied private prototype/reference packages (local custody only)
+tests/HtmltoCAPS/
+tests/Docx HTML Diff/
+build_out_s13.txt
+.pages-site/

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Doc2Table — Native Word Table Navigator</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/xy.css">
+  <link rel="stylesheet" href="css/xy_audit.css">
+  <link rel="stylesheet" href="css/xy_caps.css">
+  <link rel="stylesheet" href="css/theme.css">
+</head>
+<body>
+
+  <!-- ═══ Header ═══ -->
+  <header class="app-header">
+    <h1>📊 Doc2Table</h1>
+    <span class="badge">D2T-S1 Prototype</span>
+    <div class="file-input-wrap">
+      <label for="fileInput">Open .docx file</label>
+      <input type="file" id="fileInput" accept=".docx">
+      <span class="file-info" id="fileInfo">No file loaded</span>
+    </div>
+  </header>
+
+  <!-- ═══ Status Bar ═══ -->
+  <div class="status-bar" id="statusBar">
+    <div class="stat"><span class="label">Tables:</span> <span class="value" id="statTables">—</span></div>
+    <div class="stat"><span class="label">Body-level:</span> <span class="value" id="statBody">—</span></div>
+    <div class="stat"><span class="label">Nested:</span> <span class="value" id="statNested">—</span></div>
+    <div class="stat"><span class="label">Rows total:</span> <span class="value" id="statRows">—</span></div>
+    <span class="status-msg" id="statusMsg">Ready — drop or open a .docx file</span>
+  </div>
+
+  <!-- ═══ App Body ═══ -->
+  <div class="app-body">
+
+    <!-- ─── Navigator ─── -->
+    <aside class="navigator" id="navigator">
+      <div class="nav-header">
+        <span>Table Navigator</span>
+        <span id="navCount" class="nav-count-badge"></span>
+      </div>
+
+      <div class="nav-filter-section">
+        <label for="tableFilter" class="nav-label">Filter:</label>
+        <select id="tableFilter" class="nav-select" onchange="app.onFilterChange()">
+          <option value="all" selected>List all</option>
+          <option value="data">Only Tables with data</option>
+        </select>
+        <div class="filter-hint" id="filterHint">>= 2 rows AND >= 2 grid cols</div>
+      </div>
+
+      <div class="nav-selector-section">
+        <label for="tableSelect" class="nav-label">Select Table:</label>
+        <select id="tableSelect" class="nav-select nav-table-dropdown" onchange="app.onTableSelectChange(this.value)">
+          <option value="">-- No table loaded --</option>
+        </select>
+      </div>
+
+      <div class="nav-details" id="navDetails">
+        <div class="table-info-card" id="tableInfoCard">
+          <div class="empty-state" style="min-height:140px; padding:12px;">
+            <p>Load a .docx file to select tables.</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ─── Main Content ─── -->
+    <div class="main-content" id="mainContent">
+
+      <!-- Table Controls -->
+      <div class="table-controls" id="tableControls" style="display:none">
+        <div class="control-group">
+          <button class="btn btn-auto" id="btnAutoHeader" onclick="app.applyAutoHeader()" title="Apply automatic header/data suggestion (Auto v3)">⚡ Auto</button>
+          <button class="btn btn-refine" id="btnRefineTable" onclick="app.applyRefineTableForm()" title="Auto Refine table form to exactly one header row">✨ Auto Refine table form</button>
+          <button class="btn btn-recover" id="btnRecoverHeader" onclick="app.applyRecoverHeader()" title="Recover missing header from preceding table">📥 Recover header</button>
+          <button class="btn btn-batch" id="btnBatchRun" onclick="app.runBatchProcess()" title="Batch run Auto + Refine + Recover on all filtered tables and export before/after HTML">⚡ Batch run</button>
+          <button class="btn btn-undo-refine" id="btnUndoRefine" onclick="app.undoRefineTableForm()" style="display:none" title="Restore header before refinement">↩ Undo Refine</button>
+          <button class="btn btn-undo-recover" id="btnUndoRecover" onclick="app.undoRecoverHeader()" style="display:none" title="Restore header before recovery">↩ Undo Recover</button>
+        </div>
+        <div class="control-group">
+          <label for="headerRows">Header rows:</label>
+          <select id="headerRows">
+            <option value="0">0 (no header)</option>
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="dataStart">Data starts at row:</label>
+          <input type="number" id="dataStart" value="1" min="0" max="100" style="width:60px">
+        </div>
+        <button class="btn btn-primary" id="btnDownloadCsv" onclick="app.downloadSelectedCsv()">⬇ Download CSV</button>
+        <div class="auto-rule-badge" id="autoRuleBadge" style="display:none"></div>
+        <div class="refine-rule-badge" id="refineRuleBadge" style="display:none"></div>
+        <div class="recover-rule-badge" id="recoverRuleBadge" style="display:none"></div>
+        <div style="margin-left:auto; font-size:0.78rem; color:var(--text-muted)" id="tableTitle"></div>
+      </div>
+
+      <!-- Title Path Bar (Step 2) -->
+      <div class="title-path-bar" id="titlePathBar" style="display:none"></div>
+
+      <!-- Content Tabs -->
+      <div class="content-tabs" id="contentTabs" style="display:none">
+        <button class="content-tab active" data-panel="gridPanel" onclick="app.switchTab(this)">Grid</button>
+        <button class="content-tab" data-panel="sourcePanel" onclick="app.switchTab(this)">Source XML</button>
+        <button class="content-tab" data-panel="csvPanel" onclick="app.switchTab(this)">CSV Preview</button>
+        <button class="content-tab" data-panel="provenancePanel" onclick="app.switchTab(this)">Provenance</button>
+      </div>
+
+      <!-- Panels -->
+      <div class="content-panel" id="gridPanel">
+        <div class="empty-state drop-zone" id="dropZone">
+          <div class="icon">📄</div>
+          <h3>Drop a .docx file here</h3>
+          <p>Or use the "Open .docx file" button above.<br>
+             Tables are extracted locally in your browser — nothing is uploaded.</p>
+        </div>
+      </div>
+      <div class="content-panel hidden" id="sourcePanel"></div>
+      <div class="content-panel hidden" id="csvPanel"></div>
+      <div class="content-panel hidden" id="provenancePanel"></div>
+    </div>
+  </div>
+
+  <!-- ═══ Loading Overlay ═══ -->
+  <div class="loading-overlay hidden" id="loadingOverlay">
+    <div style="text-align:center">
+      <div class="spinner"></div>
+      <p style="margin-top:12px; color:var(--text-muted)">Parsing document…</p>
+    </div>
+  </div>
+
+  <!-- ═══ Scripts ═══ -->
+  <script src="js/jszip.min.js"></script>
+  <script src="js/docx-table-parser.js"></script>
+  <script src="js/auto-header-v3.js"></script>
+  <script src="js/table-refiner.js"></script>
+  <script src="js/header-recovery.js"></script>
+  <script src="js/csv-exporter.js"></script>
+  <script src="js/batch-exporter.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/xy_inventory.js"></script>
+  <script src="js/xy_compare.js"></script>
+  <script src="js/xy_emission.js"></script>
+  <script src="js/xy_audit_view.js"></script>
+  <script src="js/xy_audit_ui.js"></script>
+  <script src="js/xy_caps_engine.js"></script>
+  <script src="js/xy_caps_config.js"></script>
+  <script src="js/xy_caps_reference.js"></script>
+  <script src="js/xy_caps_export.js"></script>
+  <script src="js/xy_caps_adapter.js"></script>
+  <script src="js/xy_caps_view.js"></script>
+  <script src="js/xy_caps_ui.js"></script>
+  <script src="js/xy_integration.js"></script>
+
+</body>
+</html>
