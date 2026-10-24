@@ -13,7 +13,7 @@ const audit={meta:{filename:'fixture.docx'},result:{
 }};
 test('CSV is properly quoted and formula-neutralized',()=>{
   const csv=AuditExport.csv(audit);
-  assert.match(csv,/^\\ufeff/);
+  assert.equal(csv.charCodeAt(0),0xFEFF);
   assert.ok(csv.includes("\"'=SUM(1,2)\""));
   assert.ok(csv.includes('"Hello,<script>alert(1)</script>"'));
   assert.ok(csv.includes('MISSING'));
