@@ -18,8 +18,19 @@ const DiffTab = (() => {
             return;
         }
         const meta=add(el,'p','Comparison mode: '+audit.meta.mode+' · '+(audit.meta.sourceSha256||'source hash unavailable'),'audit-muted');
-        add(el,'p','Fidelity HOLD: compares '+audit.meta.artifactScope+
-            '. Final Output CSV/Excel bytes and selections have not been audited.','audit-warning');
+        add(el,'p','Source-fidelity HOLD: compares '+audit.meta.artifactScope+
+            '. Exact export bytes may be verified against selected table grids, not original DOCX occurrences.','audit-warning');
+        const exports=appState.exportManifests||[];
+        if(exports.length){
+            add(el,'h3','Output artifact attestations');
+            exports.forEach(m=>{
+                add(el,'p',m.mode.toUpperCase()+' selected ['+m.selectedIndices.join(', ')+'] · '+
+                    (m.preparedBytesVerified?'PRE-DOWNLOAD BYTES VERIFIED':'UNVERIFIED')+
+                    ' · final disk bytes: NOT VERIFIED','audit-muted');
+                m.files.forEach(item=>add(el,'p',item.filename+' · SHA-256 '+item.sha256+
+                    ' · '+item.byteLength+' bytes','audit-muted'));
+            });
+        }
         const nav=add(el,'div',undefined,'audit-actions');
         sections.forEach(section=>{
             const b=add(nav,'button',section+(state.section===section?' ●':''));

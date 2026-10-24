@@ -80,7 +80,7 @@ async function smoke() {
       setTimeout(()=>reject(Error('Report iframe load timeout')),5000);
     });
     const reportBody=preview.contentDocument.body.textContent;
-    if(!reportBody.includes('Final CSV/Excel export-byte fidelity NOT VERIFIED'))
+    if(!reportBody.includes('Original DOCX-to-output fidelity NOT VERIFIED'))
       throw Error('F6 offline report omitted exported-artifact limitation');
     if(!reportBody.includes('ORPHAN_TEXT_777') || !reportBody.includes('HEADER_EXCEPTION_777'))
       throw Error('F7 standalone viewer did not render orphan output and coverage exception');

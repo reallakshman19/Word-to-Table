@@ -29,7 +29,8 @@ const appState = {
     companionHtml: null,
     audit: null,
     runEpoch: 0,
-    conversion: null
+    conversion: null,
+    exportManifests: []
 };
 
 // ═══════════ Mode Detection ═══════════
@@ -88,6 +89,7 @@ async function extractTables() {
     appState.audit = null;
     appState.sourceLedger = null;
     appState.conversion = null;
+    appState.exportManifests = [];
 
     if (!file) {
         showStatus('Please select a .docx file first', 'error');
@@ -710,6 +712,7 @@ function onDocxChanged() {
     appState.sourceLedger = null;
     appState.sourceSha256 = null;
     appState.conversion = null;
+    appState.exportManifests = [];
     appState.companionHtml = null;
     const companionInput = document.getElementById('companion_html_upload');
     if (companionInput) companionInput.value = '';
@@ -760,6 +763,7 @@ async function runDiffAndQA() {
                 targetSha256:htmlHash,configHash,engine:'v3.1.0',timestamp:new Date().toISOString(),
                 sourceCoverage:appState.sourceLedger.hasCoverageExceptions?'EXCEPTIONS':'DECLARED_SCOPE_ONLY',
                 conversionVerified:conversion.verified, exportArtifactVerified:false,
+                exportArtifacts:appState.exportManifests.slice(),
                 artifactScope:companion?'UPLOADED_COMPANION_HTML':'RECONSTRUCTED_TABLE_HTML',
                 targetFilename:companion?companion.filename:'generated HTML'},
             sourceLedger:appState.sourceLedger,

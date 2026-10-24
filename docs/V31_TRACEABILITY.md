@@ -28,3 +28,6 @@ Phase A under construction; not production-ready. Do not merge/deploy until expl
 - F6 remains OPEN: a QA report generated from reconstructed table HTML does not prove byte fidelity of the Output tab CSV/Excel artifacts or selected-table exports.
 - The app and offline HTML explicitly mark final-export artifact verification FALSE; no production certification is implied.
 - Original R5 files, Edge, local-server parity and independent authorized reviewer validation still not run.
+
+## F6 browser export artifact scope
+Browser mode now produces selected-table CSV files and a native OOXML XLSX bundle using bundled JSZip. It reads back the exact prepared bytes, checks values against selected table grids and publishes file-specific SHA-256 hashes (including selected table identities) in the audit UI/export metadata. These prove **pre-download payload parity**, not persisted disk bytes and not original DOCX completeness. Server mode remains marked unverified until the backend can attest on-disk artifacts; existing local-server behavior is not rewritten.
