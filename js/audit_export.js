@@ -67,7 +67,7 @@ const AuditExport = (() => {
             document.getElementById('next').addEventListener('click',()=>{page++;render();});
             render();
         }
-        const options=['All','Issues','PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','FILTERED','MISSING','AMBIGUOUS','UNSUPPORTED','ERROR'];
+        const options=['All','Issues','PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','CANDIDATE_MATCH','FILTERED','MISSING','AMBIGUOUS','UNSUPPORTED','ERROR'];
         return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
             '<meta name="viewport" content="width=device-width,initial-scale=1">' +
             '<title>Word-to-Table Traceability Audit</title><style>'+style+'</style></head><body>' +

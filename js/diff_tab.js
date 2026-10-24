@@ -2,7 +2,7 @@
 const DiffTab = (() => {
     const state={section:'Summary',filter:'All',search:'',page:0};
     const sections=['Summary','Pages','Exceptions','Provenance'];
-    const options=['All','Issues','PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','FILTERED','MISSING','AMBIGUOUS','UNSUPPORTED','ERROR'];
+    const options=['All','Issues','PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','CANDIDATE_MATCH','FILTERED','MISSING','AMBIGUOUS','UNSUPPORTED','ERROR'];
     const add=(parent,tag,text,cls) => {
         const n=document.createElement(tag);if(cls)n.className=cls;
         if(text!==undefined)n.textContent=String(text);parent.appendChild(n);return n;

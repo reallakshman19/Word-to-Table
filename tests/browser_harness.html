@@ -33,7 +33,8 @@ async function smoke() {
     const summary=doc.getElementById('tab-diffhtml').textContent;
     if(cards.length!==5)throw Error('Expected 5 source occurrences, got '+cards.length);
     if(!summary.includes('MISSING'))throw Error('Missing paragraph not detected');
-    if(!summary.includes('PRESERVED_EXACT'))throw Error('Preserved cells not detected');
+    if(!summary.includes('CANDIDATE_MATCH'))throw Error('Unverified extracted cells not disclosed');
+    if(frame.appState.audit.result.qualified!==false) throw Error('Post-hoc source IDs incorrectly certified');
     const issueCard=Array.from(cards).find(c=>c.textContent.includes('Design limits'));
     if(!issueCard || !issueCard.textContent.includes('MISSING'))throw Error('Dropped paragraph not traced');
     const config=doc.querySelector('.main-tab-btn[data-tab="settings"]');

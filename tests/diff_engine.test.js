@@ -10,7 +10,7 @@ function o(id,text,sids=[],row=0,col=0,table=0) {
 }
 function run(src,out,mode='generated',events=[]) {
     return DiffEngine.compare({occurrences:src,tables:[{tableId:'T',parentTableId:null}],diagnostics:[]},
-        {events}, {mode,occurrences:out}, {});
+        {events,provenanceVerified:mode==='generated'}, {mode,occurrences:out,visibilityVerified:true}, {});
 }
 test('N01: duplicate source does not reuse one output', () => {
     const r=run([s('a','SAME'),s('b','SAME', 'cell',0,1)],[o('x','SAME',['a'])]);

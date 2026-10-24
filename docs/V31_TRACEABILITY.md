@@ -14,3 +14,10 @@ This data model does not by itself establish an end-to-end conversion audit. Sou
 
 ## Status
 Phase A under construction; not production-ready. Do not merge/deploy until explicit owner acceptance.
+
+## Adversarial correction F0-F4 — 2026-10-24
+- Added explicit CANDIDATE_MATCH for uncorroborated matching text. Companion mode and post-hoc generated source annotations cannot certify fidelity.
+- Generated matching rejects row/column/table displacement even when source IDs happen to match; true reorders need independently recorded transforms.
+- Tracked-change wrappers retain inserted current text, skip deleted text, and emit diagnostics; those occurrences are UNSUPPORTED pending a revision policy.
+- CSS target visibility is not computed by DOMParser; stylesheet presence is flagged, and companion visible-text preservation remains uncertified.
+- This remains a HOLD: ConversionLedger still annotates IDs after serialization. To certify fidelity, bind provenance at actual converter emission, reconcile actual export bytes, and independently verify R5/Edge.
