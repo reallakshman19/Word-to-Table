@@ -54,6 +54,14 @@ async function smoke() {
     // Blob URL downloads do not guarantee file persisted to user disk.
     // Manifest must not claim delivered-file byte verification.
     if(excel.manifest.deliveredFileBytesVerified)throw Error('F6 claims disk bytes verified');
+    // Actual Output Tab action and state manifest, without server or target folder.
+    await frame.eval('OutputTab').exportBatch('individual');
+    await frame.eval('OutputTab').exportBatch('combined');
+    const history=frame.eval('appState.exportManifests');
+    if(history.length!==2 || !history[0].preparedBytesVerified || !history[1].preparedBytesVerified)
+      throw Error('F6 Output-tab action did not persist a verified manifest');
+    if(history.some(m=>m.originalDocxFidelityVerified || m.deliveredFileBytesVerified))
+      throw Error('F6 Output-tab manifest falsely claims source or disk fidelity');
     const doc=frame.document;
     const cards=doc.querySelectorAll('#tab-diffhtml .audit-record');
     const summary=doc.getElementById('tab-diffhtml').textContent;
