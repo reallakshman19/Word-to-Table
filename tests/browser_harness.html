@@ -35,6 +35,7 @@ async function smoke() {
     if(!summary.includes('MISSING'))throw Error('Missing paragraph not detected');
     if(!summary.includes('CANDIDATE_MATCH'))throw Error('Unverified extracted cells not disclosed');
     if(frame.eval('appState.audit.result.qualified')!==false) throw Error('Post-hoc source IDs incorrectly certified');
+    if(frame.eval('appState.audit.meta.exportArtifactVerified')!==false) throw Error('F6 output export falsely certified');
     const issueCard=Array.from(cards).find(c=>c.textContent.includes('Design limits'));
     if(!issueCard || !issueCard.textContent.includes('MISSING'))throw Error('Dropped paragraph not traced');
     const config=doc.querySelector('.main-tab-btn[data-tab="settings"]');
@@ -50,6 +51,20 @@ async function smoke() {
     const actualGrid=frame.eval('new DocxParser()')._extractTableGrid(outer);
     if(actualGrid.length!==1 || actualGrid[0][0]!=='OUTER') throw Error('F5 nested table leaked into outer grid');
     const nestedSource=frame.eval('SourceInventory').build(nestedDoc,[]);
+    // Real-browser regression for F3: tracked insertion must not disappear.
+    const revisedXml='<w:document xmlns:w="'+ns+'"><w:body><w:p>'+
+        '<w:ins><w:r><w:t>INSERTED_TEXT</w:t></w:r></w:ins>'+
+        '</w:p></w:body></w:document>';
+    const revisedDoc=new frame.DOMParser().parseFromString(revisedXml,'application/xml');
+    const revised=frame.eval('SourceInventory').build(revisedDoc,[]);
+    if(revised.occurrences[0].textOriginal!=='INSERTED_TEXT' || !revised.hasCoverageExceptions)
+      throw Error('F3 tracked insertion is not inventoried and flagged');
+    // F4: DOMParser cannot certify visual visibility under CSS stylesheets.
+    const hiddenHtml='<style>.concealed{display:none}</style>'+
+      '<table><tr><td class="concealed">INVISIBLE_CSS_TEXT</td></tr></table>';
+    const hiddenOutput=frame.eval('OutputInventory').parse(hiddenHtml,'companion');
+    if(!hiddenOutput.visibilityRisk || hiddenOutput.visibilityVerified)
+      throw Error('F4 CSS-hidden text incorrectly certified visible');
     if(!nestedSource.hasCoverageExceptions || !nestedSource.diagnostics.some(x=>x.feature==='nestedTable'))
       throw Error('F5 nested-table limitation not declared');
     // F7: standalone reports must render orphan outputs and coverage exceptions.
@@ -65,6 +80,8 @@ async function smoke() {
       setTimeout(()=>reject(Error('Report iframe load timeout')),5000);
     });
     const reportBody=preview.contentDocument.body.textContent;
+    if(!reportBody.includes('Final CSV/Excel export-byte fidelity NOT VERIFIED'))
+      throw Error('F6 offline report omitted exported-artifact limitation');
     if(!reportBody.includes('ORPHAN_TEXT_777') || !reportBody.includes('HEADER_EXCEPTION_777'))
       throw Error('F7 standalone viewer did not render orphan output and coverage exception');
     preview.remove();

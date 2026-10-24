@@ -51,7 +51,8 @@ const AuditExport = (() => {
             const rows=data.viewRows||[];
             const status=document.getElementById('status');
             status.textContent='Source '+data.result.sourceTotal+' · Extra output '+data.result.extraOutput.length+
-                ' · Coverage exceptions '+data.result.diagnostics.length;
+                ' · Coverage exceptions '+data.result.diagnostics.length+
+                ' · Final CSV/Excel export-byte fidelity NOT VERIFIED';
             const filter=document.getElementById('status-filter');
             const search=document.getElementById('search');
             const list=document.getElementById('records');

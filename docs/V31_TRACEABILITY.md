@@ -21,3 +21,10 @@ Phase A under construction; not production-ready. Do not merge/deploy until expl
 - Tracked-change wrappers retain inserted current text, skip deleted text, and emit diagnostics; those occurrences are UNSUPPORTED pending a revision policy.
 - CSS target visibility is not computed by DOMParser; stylesheet presence is flagged, and companion visible-text preservation remains uncertified.
 - This remains a HOLD: ConversionLedger still annotates IDs after serialization. To certify fidelity, bind provenance at actual converter emission, reconcile actual export bytes, and independently verify R5/Edge.
+
+## F5–F7 and exported-artifact boundary
+- F5 nested-table rows no longer contaminate outer-table grids; nested OOXML tables remain inventoried with an explicit unsupported-conversion diagnostic until actual nested conversion can be mapped.
+- F7 standalone HTML and CSV include source rows, orphan output occurrences and source coverage exceptions as separate record types.
+- F6 remains OPEN: a QA report generated from reconstructed table HTML does not prove byte fidelity of the Output tab CSV/Excel artifacts or selected-table exports.
+- The app and offline HTML explicitly mark final-export artifact verification FALSE; no production certification is implied.
+- Original R5 files, Edge, local-server parity and independent authorized reviewer validation still not run.

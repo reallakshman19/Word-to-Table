@@ -18,6 +18,8 @@ const DiffTab = (() => {
             return;
         }
         const meta=add(el,'p','Comparison mode: '+audit.meta.mode+' · '+(audit.meta.sourceSha256||'source hash unavailable'),'audit-muted');
+        add(el,'p','Fidelity HOLD: compares '+audit.meta.artifactScope+
+            '. Final Output CSV/Excel bytes and selections have not been audited.','audit-warning');
         const nav=add(el,'div',undefined,'audit-actions');
         sections.forEach(section=>{
             const b=add(nav,'button',section+(state.section===section?' ●':''));
