@@ -22,6 +22,8 @@ const SourceInventory = (() => {
         function walk(node) {
             if (node.localName === 'del' || node.localName === 'moveFrom') return;
             if (node.localName === 't') { out.push(node.textContent || ''); return; }
+            if (node.localName === 'noBreakHyphen') { out.push('\u2011'); return; }
+            if (node.localName === 'softHyphen') { out.push('\u00ad'); return; }
             if (node.localName === 'tab') { out.push('\t'); return; }
             if (node.localName === 'br' || node.localName === 'cr') { out.push('\n'); return; }
             // Recurse through runs, hyperlinks and change wrappers, so an

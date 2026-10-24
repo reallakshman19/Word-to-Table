@@ -39,3 +39,9 @@ Browser mode now produces selected-table CSV files and a native OOXML XLSX bundl
 - Display-only report headings, TOC and summary are not treated as original DOCX paragraphs.
 - Expose omitted source tables explicitly; report's "Only Tables with data" is not proof of an actual converter filtering event.
 - No uploaded customer HTML is committed into this repository.
+
+## R5_after independently observed source-text defect (private HTML not checked in)
+- The original checked-in R5.docx contains 91 OOXML `w:noBreakHyphen` nodes; older `SourceInventory` and browser converter discarded them.
+- Source inventory and legacy browser table parser now keep `w:noBreakHyphen` as U+2011 and `w:softHyphen` as U+00AD. Stripping either must not cause a false exact preservation classification.
+- The companion report is a 44-table refined report with source-numbered `t1,t3,...,t45` sections. Table #2 is omitted, but a verified filter event is not available.
+- Paired HTML is user-provided and remains local, not committed. Source-to-target counts must be qualified as text candidates rather than guaranteed source identity.

@@ -109,6 +109,10 @@ class DocxParser {
             for (const child of children) {
                 if (child.localName === 't') {
                     texts.push(child.textContent);
+                } else if (child.localName === 'noBreakHyphen') {
+                    texts.push('\u2011');
+                } else if (child.localName === 'softHyphen') {
+                    texts.push('\u00ad');
                 } else if (child.localName === 'br') {
                     texts.push('\n');
                 } else if (child.localName === 'cr') {

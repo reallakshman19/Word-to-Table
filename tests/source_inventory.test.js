@@ -40,3 +40,10 @@ test('F5: nested table emits an explicit unsupported-conversion diagnostic',()=>
    assert.ok(ledger.diagnostics.some(d=>d.feature==='nestedTable'));
    assert.equal(ledger.hasCoverageExceptions,true);
 });
+
+test('R5-hyphen: OOXML nonbreaking-hyphen run retains character and does not look preserved when removed',()=>{
+    const doc=makeDoc(el('body',[el('p',[el('r',[el('t',[],'ASTM A234'),el('noBreakHyphen'),el('t',[],'WPB')])])]));
+    const ledger=SourceInventory.build(doc,[]);
+    assert.equal(ledger.occurrences[0].textOriginal,'ASTM A234\u2011WPB');
+    assert.notEqual(ledger.occurrences[0].textOriginal,'ASTM A234WPB');
+});

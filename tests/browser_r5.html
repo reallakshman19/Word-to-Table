@@ -17,6 +17,8 @@ document.getElementById('app').addEventListener('load',async()=>{
        throw Error('R5 source occurrence mismatch: JS='+real.occurrences.length+' independent='+oracle.supportedOccurrenceCount);
     if(real.tables.length!==oracle.tableCount)
        throw Error('R5 source table count mismatch: JS='+real.tables.length+' independent='+oracle.tableCount);
+    if(!real.occurrences.some(x=>x.textOriginal.includes('\u2011')))
+       throw Error('R5 nonbreaking hyphens absent from source inventory');
     const hash=await frame.auditSha256(raw);
     if(hash!==oracle.sourceSha256)throw Error('R5 fixture SHA mismatch');
     // Run actual app extraction, not just the source inventory.
