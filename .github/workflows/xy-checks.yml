@@ -25,3 +25,6 @@ jobs:
       - run: node tests/xy_integration_browser.cjs
         env:
           XY_SITE_ROOT: .pages-site
+      - run: node tests/sctl_p11_browser.cjs
+        env:
+          XY_SITE_ROOT: .pages-site
