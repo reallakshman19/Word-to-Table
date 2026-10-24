@@ -32,6 +32,24 @@ async function run() {
       'Tables|CAPS|Word/HTML diff|Source Traceability');
     check('original Tables remains initially visible', await page.locator('.app-body').isVisible());
     await page.selectOption('#tableFilter', 'data');
+    // Existing table state is exercised on a synthetic DOCX, never an R5 substitute.
+    const synthetic = await page.evaluate(async () => {
+      const z = new JSZip();
+      z.file('word/document.xml',
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+        '<w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Head A</w:t></w:r></w:p></w:tc>' +
+        '<w:tc><w:p><w:r><w:t>Head B</w:t></w:r></w:p></w:tc></w:tr>' +
+        '<w:tr><w:tc><w:p><w:r><w:t>Cell A</w:t></w:r></w:p></w:tc>' +
+        '<w:tc><w:p><w:r><w:t>Cell B</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>');
+      return await z.generateAsync({type:'base64'});
+    });
+    await page.setInputFiles('#fileInput', {
+      name:'public-synthetic.docx',mimeType:'application/octet-stream',buffer:Buffer.from(synthetic,'base64')
+    });
+    await page.waitForFunction(() => document.getElementById('statusMsg').textContent.startsWith('Done'));
+    await page.selectOption('#headerRows', '2');
+    const selectedBefore = await page.evaluate(() => app.getSelectedPhysicalIndex());
+    check('synthetic Word table is actually loaded', selectedBefore === 1);
     await page.click('#xy-tab-trace');
     check('Source Traceability is independent fourth view',
       await page.locator('#tab-trace').isVisible() &&
@@ -63,6 +81,9 @@ async function run() {
     await page.click('#xy-tab-tables');
     check('Tables filter retained across all fourth-tab switches',
       await page.inputValue('#tableFilter') === 'data' &&
+      await page.inputValue('#headerRows') === '2' &&
+      await page.evaluate(() => app.getSelectedPhysicalIndex()) === selectedBefore &&
+      (await page.textContent('#fileInfo')).includes('public-synthetic.docx') &&
       await page.locator('.app-body').isVisible());
     await page.click('#xy-tab-trace');
     check('rejected import remains rejected after tab switch', (await page.textContent('#sctl-status')).includes('NO VERIFIED SOURCE LOADED'));
