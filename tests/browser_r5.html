@@ -36,6 +36,15 @@ document.getElementById('app').addEventListener('load',async()=>{
     // F6: attest actual exported bytes for every R5 table, not just a synthetic table.
     const allIndices=state.tables.map((_,i)=>i);
     const exporter=frame.eval('ArtifactExport');
+    const mismatches=state.tables.map((t,i)=>{
+      const a=exporter.csvRows(t.csv),e=exporter.grid(t);
+      if(exporter.equalRows(a,e))return null;
+      let row=0;
+      while(row<Math.min(a.length,e.length) && JSON.stringify(a[row])===JSON.stringify(e[row]))row++;
+      return {table:i,rowsActual:a.length,rowsExpected:e.length,row,
+        actualWidth:a[row]?.length||0,expectedWidth:e[row]?.length||0};
+    }).filter(Boolean);
+    if(mismatches.length)throw Error('R5 CSV mismatch diagnostics '+JSON.stringify(mismatches.slice(0,8))+' / total '+mismatches.length);
     const csv=await exporter.prepare(state.tables,allIndices,'individual',false,state.sourceLedger);
     const xlsx=await exporter.prepare(state.tables,allIndices,'combined',false,state.sourceLedger);
     if(csv.files.length!==state.tables.length || xlsx.manifest.files[0].sheets.length!==state.tables.length)
