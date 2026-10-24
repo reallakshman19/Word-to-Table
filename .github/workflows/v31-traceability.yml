@@ -19,11 +19,11 @@ jobs:
         run: node --version
       - name: Syntax-check changed JavaScript
         run: |
-          for file in js/source_inventory.js js/output_inventory.js js/conversion_ledger.js js/diff_engine.js js/audit_export.js js/diff_tab.js js/app.js js/docx_parser.js js/settings_tab.js tests/diff_engine.test.js tests/audit_export.test.js; do
+          for file in js/source_inventory.js js/output_inventory.js js/conversion_ledger.js js/diff_engine.js js/audit_export.js js/diff_tab.js js/app.js js/docx_parser.js js/settings_tab.js tests/diff_engine.test.js tests/audit_export.test.js tests/source_inventory.test.js tests/output_inventory.test.js; do
             node --check "$file"
           done
       - name: Run occurrence and export negative cases
-        run: node --test tests/diff_engine.test.js tests/audit_export.test.js
+        run: node --test tests/diff_engine.test.js tests/audit_export.test.js tests/source_inventory.test.js tests/output_inventory.test.js
       - name: Assert tab and legacy macro anchors
         run: |
           node -e "const f=require('fs');const h=f.readFileSync('index.html','utf8');const a=f.readFileSync('js/app.js','utf8');if(!h.includes('data-tab=\"diffhtml\"')||!h.includes('data-tab=\"record\"')||!a.includes('renderBatchTab()'))process.exit(1)"

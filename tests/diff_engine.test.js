@@ -44,3 +44,31 @@ test('reused source ID yields AMBIGUOUS', () => {
     const r=run([s('a','A')],[o('x','A',['a']),o('y','A',['a'],0,1)]);
     assert.equal(r.statuses.AMBIGUOUS,1);
 });
+
+
+test('F1: identical unrelated companion cell cannot certify preservation', () => {
+    const a=s('unrelated-doc-source','IDENTICAL');
+    const r=DiffEngine.compare({occurrences:[a],tables:[{tableId:'T',parentTableId:null}],diagnostics:[]},
+       {events:[],provenanceVerified:false},
+       {mode:'companion',visibilityVerified:false,occurrences:[o('external-cell','IDENTICAL',[],0,0)]},{});
+    assert.equal(r.statuses.PRESERVED_EXACT,0);
+    assert.equal(r.statuses.CANDIDATE_MATCH,1);
+    assert.equal(r.qualified,false);
+});
+test('F2: swapped generated rows cannot qualify even with correct IDs', () => {
+    const r=DiffEngine.compare({occurrences:[s('a','FIRST'),s('b','SECOND','cell',1,0)],tables:[{tableId:'T',parentTableId:null}],diagnostics:[]},
+       {events:[],provenanceVerified:true,tables:[{sourceTableId:'T',outputTableIndex:0,headerRow:1}]},
+       {mode:'generated',visibilityVerified:true,occurrences:[
+          o('r1','SECOND',['b'],0,0),o('r2','FIRST',['a'],1,0)]},{});
+    assert.equal(r.statuses.PRESERVED_EXACT,0);
+    assert.equal(r.statuses.AMBIGUOUS,2);
+    assert.equal(r.qualified,false);
+});
+test('F0: post-hoc source IDs cannot certify a generated output', () => {
+    const r=DiffEngine.compare({occurrences:[s('a','A')],tables:[{tableId:'T',parentTableId:null}],diagnostics:[]},
+        {events:[],verified:true},
+        {mode:'generated',visibilityVerified:true,occurrences:[o('out','A',['a'])]},{});
+    assert.equal(r.statuses.PRESERVED_EXACT,0);
+    assert.equal(r.statuses.CANDIDATE_MATCH,1);
+    assert.equal(r.qualified,false);
+});
