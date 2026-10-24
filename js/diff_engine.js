@@ -1,6 +1,6 @@
 /* Deterministic, occurrence-consuming diff. No global substring matching. */
 const DiffEngine = (() => {
-    const STATUSES = ['PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','CANDIDATE_MATCH','FILTERED','MISSING','AMBIGUOUS','UNSUPPORTED','ERROR'];
+    const STATUSES = ['PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','CANDIDATE_MATCH','FILTERED','MISSING','OMITTED_UNVERIFIED','OUT_OF_EXPORT_SCOPE','EMPTY_STRUCTURE_UNVERIFIED','AMBIGUOUS','UNSUPPORTED','ERROR'];
     function norm(value, cfg) {
         let v = String(value == null ? '' : value);
         if (cfg.normalizeWhitespace !== false) v = v.replace(/\s+/g, ' ').trim();
@@ -27,6 +27,14 @@ const DiffEngine = (() => {
         const trustedProvenance = mode === 'generated' && conversionLedger &&
             conversionLedger.provenanceVerified === true && outputLedger.visibilityVerified === true;
         const tableMappings = new Map((conversionLedger && conversionLedger.tables || []).map(t => [t.sourceTableId,t]));
+        const tablesOnlyReport = mode === 'companion' && outputLedger.reportProfile === 'R5_REFINED_TABLES';
+        // Source numbering is an ordinal hint from the target, not verified provenance.
+        const reportOrdinals = new Set(outputLedger.sourceTableNumberHints || []);
+        const omittedTableIds = new Set(tablesOnlyReport ?
+            (sourceLedger.tables || []).filter(t=>!t.parentTableId)
+                .filter((t,i)=>!reportOrdinals.has(i+1)).map(t=>t.tableId) : []);
+        const sourceById = new Set(source.map(s=>s.sourceId));
+        if(sourceById.size !== source.length)throw new Error('Source occurrence IDs must be unique');
         for (const item of target) {
             const positionKey = item.kind === 'cell' ?
                 'c|'+item.tableIndex+'|'+item.rowIndex+'|'+item.colIndex :
@@ -48,6 +56,15 @@ const DiffEngine = (() => {
                 status = 'UNSUPPORTED'; reason = 'Source conversion unsupported by this extraction mode';
             } else if (filtered.has(src.sourceId)) {
                 status = 'FILTERED'; reason = filtered.get(src.sourceId).ruleId || 'Actual converter filter event';
+            } else if(src.kind === 'paragraph' && (tablesOnlyReport || mode === 'generated')) {
+                status = 'OUT_OF_EXPORT_SCOPE';
+                reason = 'Source paragraph is outside this tables-only artifact; no preservation or authorized filter has been proven';
+            } else if(omittedTableIds.has(src.tableId)) {
+                status = 'OMITTED_UNVERIFIED';
+                reason = 'Source table absent from companion; no converter FILTERED event or business authorization';
+            } else if(tablesOnlyReport && src.kind === 'cell' && src.structuralEmpty) {
+                status = 'EMPTY_STRUCTURE_UNVERIFIED';
+                reason = 'Empty canonical source cell inventoried; output structural identity not independently proven';
             } else if (mode === 'generated') {
                 const candidates = index.get(src.sourceId) || [];
                 if (candidates.length === 1) {
@@ -106,7 +123,9 @@ const DiffEngine = (() => {
             statuses[status]++;
             rows.push({
                 sourceId:src.sourceId, sourcePath:src.sourcePath, sourcePart:src.sourcePart,
-                kind:src.kind, tableId:src.tableId || null, pageHint:src.pageHint || null,
+                kind:src.kind, tableId:src.tableId || null,
+                rowIndex:src.rowIndex, colIndex:src.colIndex,
+                pageHint:src.pageHint || null,
                 sourceText:src.textOriginal, outputId:out ? out.outputId : null,
                 outputLocation:out ? out.location : null, outputText:out ? out.text : null,
                 status, reason, structuralEmpty:!!src.structuralEmpty
@@ -128,10 +147,17 @@ const DiffEngine = (() => {
             omittedSourceTables, targetPresentation:outputLedger.presentation || null,
             reportFilterClaim: outputLedger.reportFilterClaim || null,
             dispositionCoverage:total === source.length ? 1 : 0,
+            inventoryScope:sourceLedger.scope || 'declared source occurrences only',
+            classificationOnly:true,
+            traceabilityVerified:false,
+            sourceParagraphs:source.filter(x=>x.kind==='paragraph').length,
+            sourceEmptyCells:source.filter(x=>x.kind==='cell' && x.structuralEmpty).length,
             qualified:trustedProvenance && diagnostics.length === 0 &&
                 !statuses.CANDIDATE_MATCH && !statuses.AMBIGUOUS &&
                 !statuses.UNSUPPORTED && !statuses.ERROR && !statuses.MISSING &&
-                !statuses.ALTERED && !statuses.FILTERED && !extras.length
+                !statuses.ALTERED && !statuses.FILTERED &&
+                !statuses.OMITTED_UNVERIFIED && !statuses.OUT_OF_EXPORT_SCOPE &&
+                !statuses.EMPTY_STRUCTURE_UNVERIFIED && !extras.length
         };
     }
     function sourceTableOrdinal(ledger, id) {

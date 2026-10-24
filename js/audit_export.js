@@ -16,19 +16,21 @@ const AuditExport = (() => {
             recordType:'EXTRA_OUTPUT',sourceId:null,sourcePath:null,kind:x.kind || 'output',
             sourceText:null,outputId:x.outputId || null,outputLocation:x.location || null,
             outputText:x.text || '',status:'EXTRA_OUTPUT',
+            tableId:null,rowIndex:x.rowIndex,colIndex:x.colIndex,
             reason:'Output occurrence has no verified source correspondence'
         }));
         (result.diagnostics || []).forEach((x,i) => rows.push({
             recordType:'COVERAGE_EXCEPTION',sourceId:x.sourceId || null,
             sourcePath:x.sourcePath || x.part || null,kind:x.kind || 'coverage',
             sourceText:null,outputId:null,outputLocation:null,outputText:null,
+            tableId:null,rowIndex:null,colIndex:null,
             status:'COVERAGE_EXCEPTION',
             reason:[x.feature,x.reason].filter(Boolean).join(' — ') || 'Source inventory exception '+(i+1)
         }));
         return rows;
     }
     function csv(audit) {
-        const cols=['recordType','sourceId','sourcePath','kind','sourceText','outputId','outputLocation','outputText','status','reason'];
+        const cols=['recordType','sourceId','sourcePath','tableId','rowIndex','colIndex','kind','sourceText','outputId','outputLocation','outputText','status','reason'];
         const lines=[cols.map(csvCell).join(',')];
         reportRows(audit).forEach(row => lines.push(cols.map(k=>csvCell(row[k])).join(',')));
         return '\ufeff'+lines.join('\r\n')+'\r\n';
@@ -70,7 +72,7 @@ const AuditExport = (() => {
             const status=document.getElementById('status');
             status.textContent='Source '+data.result.sourceTotal+' · Extra output '+data.result.extraOutput.length+
                 ' · Coverage exceptions '+data.result.diagnostics.length+
-                ' · Original DOCX-to-output fidelity NOT VERIFIED';
+                ' · Classification only; original DOCX-to-output fidelity NOT VERIFIED';
             const filter=document.getElementById('status-filter');
             const search=document.getElementById('search');
             const list=document.getElementById('records');
@@ -104,7 +106,7 @@ const AuditExport = (() => {
             document.getElementById('next').addEventListener('click',()=>{page++;render();});
             render();
         }
-        const options=['All','Issues','PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','CANDIDATE_MATCH','FILTERED','MISSING','AMBIGUOUS','UNSUPPORTED','ERROR','EXTRA_OUTPUT','COVERAGE_EXCEPTION'];
+        const options=['All','Issues','PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','CANDIDATE_MATCH','FILTERED','MISSING','OMITTED_UNVERIFIED','OUT_OF_EXPORT_SCOPE','EMPTY_STRUCTURE_UNVERIFIED','AMBIGUOUS','UNSUPPORTED','ERROR','EXTRA_OUTPUT','COVERAGE_EXCEPTION'];
         return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
             '<meta name="viewport" content="width=device-width,initial-scale=1">' +
             '<title>Word-to-Table Traceability Audit</title><style>'+style+'</style></head><body>' +

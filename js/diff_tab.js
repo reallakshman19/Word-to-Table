@@ -2,7 +2,7 @@
 const DiffTab = (() => {
     const state={section:'Summary',filter:'All',search:'',page:0};
     const sections=['Summary','Pages','Exceptions','Provenance'];
-    const options=['All','Issues','PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','CANDIDATE_MATCH','FILTERED','MISSING','AMBIGUOUS','UNSUPPORTED','ERROR'];
+    const options=['All','Issues','PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','CANDIDATE_MATCH','FILTERED','MISSING','OMITTED_UNVERIFIED','OUT_OF_EXPORT_SCOPE','EMPTY_STRUCTURE_UNVERIFIED','AMBIGUOUS','UNSUPPORTED','ERROR','EXTRA_OUTPUT','COVERAGE_EXCEPTION'];
     const add=(parent,tag,text,cls) => {
         const n=document.createElement(tag);if(cls)n.className=cls;
         if(text!==undefined)n.textContent=String(text);parent.appendChild(n);return n;
@@ -45,8 +45,9 @@ const DiffTab = (() => {
         }
         if(state.section==='Summary') {
             const summary=add(el,'div',undefined,'audit-summary');
-            [['Inventoried',results.sourceTotal],['Disposition coverage',(results.dispositionCoverage*100)+'%'],
-                ['Extra output',results.extraOutput.length],['Unsupported features',results.diagnostics.length]]
+            [['Inventoried in declared scope',results.sourceTotal],['Classified (not verified)',(results.dispositionCoverage*100)+'%'],
+                ['Extra output',results.extraOutput.length],['Coverage exceptions',results.diagnostics.length],
+                ['Source paragraphs',results.sourceParagraphs || 0],['Empty source cells',results.sourceEmptyCells || 0]]
                 .concat(Object.entries(statuses)).forEach(pair=>{
                     const card=add(summary,'div',undefined,'audit-metric');
                     add(card,'strong',pair[1]);add(card,'span',pair[0]);
@@ -59,6 +60,27 @@ const DiffTab = (() => {
             if(!results.qualified || !audit.meta.sourceSha256) {
                 add(el,'p','HOLD: this report does not establish full source fidelity. Examine unresolved, unsupported and extra output.','audit-warning');
             }
+        }
+        if(state.section==='Exceptions') {
+            const highRisk=[
+                ['OMITTED_UNVERIFIED','Omitted source tables'],
+                ['MISSING','Unmatched source records'],
+                ['AMBIGUOUS','Ambiguous correspondence'],
+                ['EXTRA_OUTPUT','Unattributed output'],
+                ['OUT_OF_EXPORT_SCOPE','Paragraphs outside table output'],
+                ['EMPTY_STRUCTURE_UNVERIFIED','Empty cell structures'],
+                ['UNSUPPORTED','Unsupported source content'],
+                ['COVERAGE_EXCEPTION','Uninventoried Word features']
+            ];
+            const quick=add(el,'div',undefined,'audit-actions');
+            highRisk.forEach(([code,label])=>{
+                const count=code==='EXTRA_OUTPUT' ? results.extraOutput.length :
+                    code==='COVERAGE_EXCEPTION' ? results.diagnostics.length : (statuses[code]||0);
+                if(!count)return;
+                const b=add(quick,'button',label+' ('+count+')');
+                b.type='button';
+                b.addEventListener('click',()=>{state.filter=code;state.page=0;render();});
+            });
         }
         if(state.section==='Pages') {
             add(el,'p','Source page hints only; Word physical pagination is not independently verified. Use source IDs and logical order.');
@@ -92,7 +114,7 @@ const DiffTab = (() => {
         prev.addEventListener('click',()=>{state.page--;drawRows();});
         next.addEventListener('click',()=>{state.page++;drawRows();});
         function drawRows() {
-            let filtered=results.rows;
+            let filtered=AuditExport.reportRows(audit);
             if(state.section==='Exceptions') filtered=filtered.filter(r=>!r.status.startsWith('PRESERVED'));
             if(state.section==='Provenance') filtered=filtered.filter(r=>r.outputId);
             if(state.filter!=='All')filtered=filtered.filter(r=>state.filter==='Issues'?
@@ -110,7 +132,10 @@ const DiffTab = (() => {
                 add(card,'strong',r.status+' · '+r.sourceId);
                 const grid=add(card,'div',undefined,'audit-pair');
                 const left=add(grid,'div',undefined);
-                add(left,'small','SOURCE · '+r.sourcePath);
+                add(left,'small','SOURCE · '+(r.sourcePath||'none')+
+                    (r.tableId?' · '+r.tableId:'')+
+                    (r.rowIndex!==undefined?' · row '+(r.rowIndex+1):'')+
+                    (r.colIndex!==undefined?' · cell '+(r.colIndex+1):''));
                 add(left,'pre',r.sourceText);
                 const right=add(grid,'div',undefined);
                 add(right,'small','OUTPUT · '+(r.outputId||'none'));
