@@ -1,0 +1,27 @@
+name: X/Y static integration checks
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm install --no-save playwright@1.62.1
+      - run: npx playwright install --with-deps chrome
+      - run: node tests/xy_compare_test.cjs
+      - run: node tests/xy_reference_test.cjs
+      - run: node tests/xy_caps_export_test.cjs
+      - run: python -m unittest discover -s tests -p test_pages_bundle.py
+      - run: python scripts/build_pages.py --output .pages-site
+      - run: node tests/xy_integration_browser.cjs
+        env:
+          XY_SITE_ROOT: .pages-site

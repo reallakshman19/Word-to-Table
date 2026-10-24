@@ -1,0 +1,22 @@
+.xy-panel { padding: 20px; max-width: 100%; }
+.xy-panel h2 { margin-bottom: 12px; }
+.xy-warning { padding: 12px; background: #fff6dd; color: #664400; border-left: 4px solid #b57800; margin: 12px 0; }
+.xy-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.xy-actions button, .xy-panel input, .xy-panel select { padding: 8px; border: 1px solid #9ca3af; border-radius: 5px; }
+.xy-scroll { overflow: auto; max-height: 65vh; margin: 12px 0; }
+.xy-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.xy-table th, .xy-table td { padding: 9px; border: 1px solid #cbd5e1; vertical-align: top; text-align: left; }
+.xy-table th { position: sticky; top: 0; background: #e2e8f0; color: #172033; }
+.xy-table pre, .xy-panel pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 50rem; font-family: ui-monospace, monospace; }
+.xy-table code { overflow-wrap: anywhere; }
+.xy-panel details { margin: 12px 0; }
+.xy-field { display: block; margin: 10px 0; }
+.xy-panel textarea { width: 100%; min-height: 140px; font-family: ui-monospace, monospace; }
+.xy-panel button { cursor: pointer; }
+@media (max-width: 700px) { .xy-panel { padding: 10px; } .xy-table td { min-width: 150px; } }
+/* Additive workspace controls for the active S1.3 navigator. */
+.xy-tabs{display:flex;gap:20px;padding:0 24px;border-bottom:1px solid #2a3650;background:#121927;overflow-x:auto}
+.xy-tabs .xy-tab{cursor:pointer;padding:15px 5px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:#91a5c5;font:500 12px system-ui;white-space:nowrap}
+.xy-tabs .xy-tab[aria-selected="true"]{border-bottom-color:#6887ff;color:#b8caff;background:transparent}
+.xy-panel button{cursor:pointer;padding:7px 12px;border:1px solid var(--border);border-radius:4px}
+[hidden]{display:none!important}

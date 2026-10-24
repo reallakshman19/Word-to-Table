@@ -31,10 +31,18 @@ jobs:
         with:
           enablement: true
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Stage active prototype runtime
+        run: python scripts/build_pages.py --output .pages-site
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: '.pages-site'
 
       - name: Deploy to GitHub Pages
         id: deployment

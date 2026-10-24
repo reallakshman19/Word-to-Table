@@ -1,0 +1,1188 @@
+/**
+ * app.js — Doc2Table Prototype Application Controller (D2T-S1.1 / WBS 4.1.1)
+ *
+ * Orchestrates:
+ *   1. File loading & SHA-256 computation
+ *   2. Dropdown table selector with stable physical IDs
+ *   3. Filter: "List all" vs "Only Tables with data" (>=2 rows AND >=2 cols)
+ *   4. Auto Header v3 on-click heuristic (Rules 1, 2, 3, 4)
+ *   5. Reversible manual header/data-start editing
+ *   6. Grid/source/CSV/provenance display with label folding (Rule 2)
+ *   7. RFC 4180 CSV export with companion per-cell provenance
+ *
+ * Dependencies: DocxTableParser, AutoHeaderV3, CsvExporter (all on window)
+ */
+
+(function () {
+  'use strict';
+
+  // ─── State ───
+  let parseResult = null;            // DocxTableParser result
+  let fileHash = null;               // SHA-256 hex string
+  let fileName = null;               // Original file name
+  let selectedPhysicalIndex = -1;    // 1-based physical index of active table
+  let filterMode = 'all';            // 'all' | 'data'
+  let currentFoldedLabel = null;     // { text, labelRow, labelCol, targetRow, targetCol }
+  let autoRuleFired = null;          // Last suggestion from AutoHeaderV3
+  let currentRefined = null;         // TableRefiner result
+  let preRefineState = null;         // Saved state before refinement for Undo
+  let currentRecovered = null;       // HeaderRecovery result
+  let preRecoverState = null;        // Saved state before recovery for Undo
+
+  // ─── DOM refs ───
+  const $ = id => document.getElementById(id);
+
+  const fileInput = $('fileInput');
+  const fileInfo = $('fileInfo');
+  const navCount = $('navCount');
+  const tableFilter = $('tableFilter');
+  const tableSelect = $('tableSelect');
+  const filterHint = $('filterHint');
+  const tableInfoCard = $('tableInfoCard');
+  const tableControls = $('tableControls');
+  const contentTabs = $('contentTabs');
+  const gridPanel = $('gridPanel');
+  const sourcePanel = $('sourcePanel');
+  const csvPanel = $('csvPanel');
+  const provenancePanel = $('provenancePanel');
+  const dropZone = $('dropZone');
+  const loadingOverlay = $('loadingOverlay');
+  const statusMsg = $('statusMsg');
+  const tableTitle = $('tableTitle');
+  const headerRowsSelect = $('headerRows');
+  const dataStartInput = $('dataStart');
+  const btnAutoHeader = $('btnAutoHeader');
+  const autoRuleBadge = $('autoRuleBadge');
+  const btnRefineTable = $('btnRefineTable');
+  const btnUndoRefine = $('btnUndoRefine');
+  const refineRuleBadge = $('refineRuleBadge');
+  const btnRecoverHeader = $('btnRecoverHeader');
+  const btnUndoRecover = $('btnUndoRecover');
+  const recoverRuleBadge = $('recoverRuleBadge');
+  const titlePathBar = $('titlePathBar');
+  const btnDownloadCsv = $('btnDownloadCsv');
+
+  // ─── File Input / Drag & Drop ───
+
+  fileInput.addEventListener('change', e => {
+    if (e.target.files.length) handleFile(e.target.files[0]);
+  });
+
+  if (dropZone) {
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+  }
+
+  document.body.addEventListener('dragover', e => e.preventDefault());
+  document.body.addEventListener('drop', e => {
+    e.preventDefault();
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+
+  // ─── Header row / data start change (Independent Manual Controls) ───
+
+  headerRowsSelect.addEventListener('change', () => {
+    const hr = parseInt(headerRowsSelect.value);
+    if (parseInt(dataStartInput.value) < hr) {
+      dataStartInput.value = hr;
+    }
+    // If user changed away from rule 2 header count, clear folded label
+    if (currentFoldedLabel && hr !== 1) {
+      currentFoldedLabel = null;
+    }
+    if (currentRefined) {
+      currentRefined = null;
+      preRefineState = null;
+      if (refineRuleBadge) refineRuleBadge.style.display = 'none';
+      if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+    }
+    if (currentRecovered) {
+      currentRecovered = null;
+      preRecoverState = null;
+      if (recoverRuleBadge) recoverRuleBadge.style.display = 'none';
+      if (btnUndoRecover) btnUndoRecover.style.display = 'none';
+    }
+    if (autoRuleFired) {
+      autoRuleBadge.textContent = autoRuleFired.ruleName + ' (manually edited)';
+    }
+    if (selectedPhysicalIndex > 0) renderSelectedTable();
+  });
+
+  dataStartInput.addEventListener('change', () => {
+    if (currentRefined) {
+      currentRefined = null;
+      preRefineState = null;
+      if (refineRuleBadge) refineRuleBadge.style.display = 'none';
+      if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+    }
+    if (currentRecovered) {
+      currentRecovered = null;
+      preRecoverState = null;
+      if (recoverRuleBadge) recoverRuleBadge.style.display = 'none';
+      if (btnUndoRecover) btnUndoRecover.style.display = 'none';
+    }
+    if (autoRuleFired) {
+      autoRuleBadge.textContent = autoRuleFired.ruleName + ' (manually edited)';
+    }
+    if (selectedPhysicalIndex > 0) renderSelectedTable();
+  });
+
+  // ─── File Processing ───
+
+  async function handleFile(file) {
+    if (!file.name.toLowerCase().endsWith('.docx')) {
+      setStatus('Error: please select a .docx file', true);
+      return;
+    }
+
+    fileName = file.name;
+    setStatus('Reading file…');
+    loadingOverlay.classList.remove('hidden');
+
+    try {
+      const buffer = await file.arrayBuffer();
+
+      // Compute SHA-256
+      const hashBuf = await crypto.subtle.digest('SHA-256', buffer);
+      fileHash = Array.from(new Uint8Array(hashBuf))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+
+      fileInfo.innerHTML = `<strong>${esc(fileName)}</strong> ` +
+        `(${(file.size / 1024).toFixed(1)} KB) ` +
+        `<span class="hash">sha256:${fileHash.substring(0, 12)}…</span>`;
+
+      setStatus('Parsing tables…');
+
+      // Parse using DocxTableParser
+      const parser = new window.DocxTableParser();
+      parseResult = await parser.parse(buffer, fileHash);
+
+      computeDocumentTitlePaths();
+
+      // Reset state
+      selectedPhysicalIndex = -1;
+      currentFoldedLabel = null;
+      autoRuleFired = null;
+      autoRuleBadge.style.display = 'none';
+
+      // Update Filter & Table Selector dropdowns
+      populateTableDropdown();
+      updateStats();
+
+      // Automatically select first available table if present
+      const filtered = getFilteredTables();
+      if (filtered.length > 0) {
+        selectTableByPhysicalIndex(filtered[0].physicalIndex);
+      } else {
+        if (parseResult.tables.length > 0) {
+          // Switch to all if data filter is empty
+          filterMode = 'all';
+          tableFilter.value = 'all';
+          populateTableDropdown();
+          selectTableByPhysicalIndex(parseResult.tables[0].physicalIndex);
+        } else {
+          showNoTablesState();
+        }
+      }
+
+      setStatus(`Done — ${parseResult.totalCount} physical tables found`);
+    } catch (err) {
+      console.error(err);
+      setStatus('Error: ' + err.message, true);
+    } finally {
+      loadingOverlay.classList.add('hidden');
+    }
+  }
+
+  // ─── Filter & Dropdown Selector ───
+
+  /**
+   * Filter predicate for "Only Tables with data":
+   * >= 2 rows and >= 2 columns that contain text.
+   * Yields exactly 50 tables on Native Word.docx.
+   */
+  function isTableWithData(t) {
+    if (!t || t.rowCount < 2 || t.colCount < 2) return false;
+    let rowsWithText = 0;
+    for (let r = 0; r < t.rowCount; r++) {
+      if (t.grid[r] && t.grid[r].some(c => c && c.text && c.text.trim().length > 0)) {
+        rowsWithText++;
+      }
+    }
+    let colsWithText = 0;
+    for (let c = 0; c < t.colCount; c++) {
+      let colHasText = false;
+      for (let r = 0; r < t.rowCount; r++) {
+        const cell = t.grid[r] ? t.grid[r][c] : null;
+        if (cell && cell.text && cell.text.trim().length > 0) {
+          colHasText = true;
+          break;
+        }
+      }
+      if (colHasText) colsWithText++;
+    }
+    return rowsWithText >= 2 && colsWithText >= 2;
+  }
+
+  /**
+   * Filter predicate:
+   * 'all'  -> all tables (140)
+   * 'data' -> >= 2 rows and >= 2 columns that contain text (50 tables)
+   */
+  function getFilteredTables() {
+    if (!parseResult || !parseResult.tables) return [];
+    if (filterMode === 'data') {
+      return parseResult.tables.filter(isTableWithData);
+    }
+    return parseResult.tables;
+  }
+
+  function onFilterChange() {
+    filterMode = tableFilter.value;
+    populateTableDropdown();
+
+    // Check if current selection survived filtering
+    const filtered = getFilteredTables();
+    const stillVisible = filtered.some(t => t.physicalIndex === selectedPhysicalIndex);
+
+    if (stillVisible) {
+      // Retain current selection
+      tableSelect.value = String(selectedPhysicalIndex);
+    } else {
+      // Explicitly clear selection/exports and ask for a visible table
+      clearSelection(
+        `Selected table #${selectedPhysicalIndex} is hidden by the active filter. Please select a visible table from the dropdown above.`
+      );
+    }
+  }
+
+  function populateTableDropdown() {
+    if (!parseResult) {
+      tableSelect.innerHTML = '<option value="">-- No file loaded --</option>';
+      navCount.textContent = '';
+      return;
+    }
+
+    const filtered = getFilteredTables();
+    const totalCount = parseResult.tables.length;
+
+    if (filterMode === 'data') {
+      navCount.textContent = `(${filtered.length}/${totalCount})`;
+      if (filterHint) filterHint.textContent = `Filtered: >= 2 rows and >= 2 cols with text (${filtered.length} tables)`;
+    } else {
+      navCount.textContent = `(${totalCount})`;
+      if (filterHint) filterHint.textContent = `Showing all ${totalCount} physical tables`;
+    }
+
+    if (filtered.length === 0) {
+      tableSelect.innerHTML = '<option value="">-- No matching tables --</option>';
+      tableInfoCard.innerHTML = '<p class="text-muted">No tables match the selected filter.</p>';
+      return;
+    }
+
+    let html = '<option value="">-- Select a table --</option>';
+    for (const t of filtered) {
+      const isNested = t.isNested;
+      const prefix = isNested ? `↳ #${t.physicalIndex} (Nested in #${t.parentTableIndex})` : `#${t.physicalIndex} Table ${t.bodyIndex}`;
+      const dim = `${t.rowCount}×${t.colCount}`;
+      const spanFlag = t.hasSpans ? ' [spans]' : '';
+      const usedFlag = t.usedAsHeaderOf ? ` [used as header of #${t.usedAsHeaderOf}]` : '';
+      html += `<option value="${t.physicalIndex}">${esc(prefix)} — ${dim}${spanFlag}${usedFlag}</option>`;
+    }
+
+    tableSelect.innerHTML = html;
+
+    if (selectedPhysicalIndex > 0) {
+      tableSelect.value = String(selectedPhysicalIndex);
+    }
+  }
+
+  function onTableSelectChange(val) {
+    if (!val) {
+      clearSelection('Please select a table from the dropdown above.');
+      return;
+    }
+    const physIdx = parseInt(val, 10);
+    selectTableByPhysicalIndex(physIdx);
+  }
+
+  function selectTableByPhysicalIndex(physIdx) {
+    if (!parseResult) return;
+    const t = parseResult.tables.find(x => x.physicalIndex === physIdx);
+    if (!t) return;
+
+    selectedPhysicalIndex = physIdx;
+    tableSelect.value = String(physIdx);
+
+    // Reset auto-header suggestions, folded label, and refinement on table switch
+    currentFoldedLabel = null;
+    autoRuleFired = null;
+    currentRefined = null;
+    preRefineState = null;
+    currentRecovered = null;
+    preRecoverState = null;
+    autoRuleBadge.style.display = 'none';
+    if (refineRuleBadge) refineRuleBadge.style.display = 'none';
+    if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+    if (recoverRuleBadge) recoverRuleBadge.style.display = 'none';
+    if (btnUndoRecover) btnUndoRecover.style.display = 'none';
+
+    // Show controls
+    tableControls.style.display = '';
+    contentTabs.style.display = '';
+    if (btnDownloadCsv) btnDownloadCsv.disabled = false;
+
+    // Update table info card
+    renderTableInfoCard(t);
+
+    const label = t.isNested
+      ? `Nested table #${t.physicalIndex} (inside Table #${t.parentTableIndex})`
+      : `Table ${t.bodyIndex} (Physical #${t.physicalIndex})`;
+    tableTitle.textContent = `${label} — ${t.rowCount}×${t.colCount}`;
+
+    // Set data start max
+    dataStartInput.max = t.rowCount;
+
+    // Default header rows & data start (defaults to 1 and 1 if table has >= 2 rows, else 0 and 0)
+    if (t.rowCount >= 2) {
+      headerRowsSelect.value = '1';
+      dataStartInput.value = '1';
+    } else {
+      headerRowsSelect.value = '0';
+      dataStartInput.value = '0';
+    }
+
+    renderSelectedTable();
+  }
+
+  function clearSelection(message) {
+    selectedPhysicalIndex = -1;
+    tableSelect.value = '';
+    currentFoldedLabel = null;
+    autoRuleFired = null;
+    currentRefined = null;
+    preRefineState = null;
+    currentRecovered = null;
+    preRecoverState = null;
+    autoRuleBadge.style.display = 'none';
+    if (refineRuleBadge) refineRuleBadge.style.display = 'none';
+    if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+    if (recoverRuleBadge) recoverRuleBadge.style.display = 'none';
+    if (btnUndoRecover) btnUndoRecover.style.display = 'none';
+
+    tableControls.style.display = 'none';
+    contentTabs.style.display = 'none';
+    if (btnDownloadCsv) btnDownloadCsv.disabled = true;
+
+    tableInfoCard.innerHTML = `<p class="text-muted">${esc(message || 'No table selected')}</p>`;
+    gridPanel.innerHTML = `<div class="notice notice-warn">${esc(message || 'No table selected')}</div>` +
+      '<div class="empty-state"><p>Choose a table from the dropdown above to inspect.</p></div>';
+    sourcePanel.innerHTML = '';
+    csvPanel.innerHTML = '';
+    provenancePanel.innerHTML = '';
+  }
+
+  function renderTableInfoCard(t) {
+    let badges = '';
+    if (t.isNested) badges += '<span class="badge-sm badge-nested">nested</span> ';
+    if (t.hasSpans) badges += '<span class="badge-sm badge-spans">spans</span> ';
+
+    tableInfoCard.innerHTML = `
+      <h4>Physical Table #${t.physicalIndex}</h4>
+      <div class="info-row"><span class="label">Type:</span><span class="val">${t.isNested ? 'Nested in #' + t.parentTableIndex : 'Body Table ' + t.bodyIndex}</span></div>
+      <div class="info-row"><span class="label">Dimensions:</span><span class="val">${t.rowCount} rows × ${t.colCount} cols</span></div>
+      <div class="info-row"><span class="label">Spans:</span><span class="val">${t.hasSpans ? 'Present' : 'None'}</span></div>
+      ${t.nestedTableIndices && t.nestedTableIndices.length > 0 ? `<div class="info-row"><span class="label">Contains Nested:</span><span class="val">#${t.nestedTableIndices.join(', #')}</span></div>` : ''}
+      ${badges ? `<div style="margin-top:6px">${badges}</div>` : ''}
+    `;
+  }
+
+  // ─── Auto Header v3 ───
+
+  function applyAutoHeader() {
+    if (selectedPhysicalIndex <= 0 || !parseResult) return;
+    const t = parseResult.tables.find(x => x.physicalIndex === selectedPhysicalIndex);
+    if (!t) return;
+
+    // Reset refine and recover state when re-running Auto
+    currentRefined = null;
+    preRefineState = null;
+    currentRecovered = null;
+    preRecoverState = null;
+    if (refineRuleBadge) refineRuleBadge.style.display = 'none';
+    if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+    if (recoverRuleBadge) recoverRuleBadge.style.display = 'none';
+    if (btnUndoRecover) btnUndoRecover.style.display = 'none';
+
+    // Call AutoHeaderV3 heuristic (pure, idempotent)
+    const suggestion = window.AutoHeaderV3.suggest(t);
+    autoRuleFired = suggestion;
+
+    if (suggestion.warning) {
+      // Show warning and keep prior selection
+      autoRuleBadge.style.display = '';
+      autoRuleBadge.className = 'auto-rule-badge auto-rule-warn';
+      autoRuleBadge.textContent = '⚠ ' + suggestion.ruleExplanation;
+      return;
+    }
+
+    // Apply header and data start suggestions
+    headerRowsSelect.value = String(suggestion.headerRowCount);
+    dataStartInput.value = String(suggestion.dataStartRow);
+    currentFoldedLabel = suggestion.foldedLabel;
+
+    // Display fired rule explanation
+    autoRuleBadge.style.display = '';
+    autoRuleBadge.className = 'auto-rule-badge';
+    autoRuleBadge.textContent = '⚡ ' + suggestion.ruleExplanation;
+
+    renderSelectedTable();
+  }
+
+  // ─── Auto Refine Table Form (D2T-S1.2) ───
+
+  function applyRefineTableForm() {
+    if (selectedPhysicalIndex <= 0 || !parseResult) return;
+    const t = getActiveTable();
+    if (!t) return;
+
+    if (currentRefined) {
+      // Table is already refined! Pressing a second time changes nothing and says "already refined"
+      if (refineRuleBadge) {
+        refineRuleBadge.style.display = '';
+        const prev = refineRuleBadge.innerHTML;
+        if (!prev.includes('already refined')) {
+          refineRuleBadge.innerHTML = prev + ' <span class="badge-already-refined">(already refined)</span>';
+        }
+      }
+      return;
+    }
+
+    const hr = parseInt(headerRowsSelect.value, 10);
+    const ds = Math.max(parseInt(dataStartInput.value, 10) || 0, 0);
+
+    // Save previous state for Undo (only before initial refine)
+    preRefineState = {
+      headerRowCount: hr,
+      dataStartRow: ds,
+      foldedLabel: currentFoldedLabel ? Object.assign({}, currentFoldedLabel) : null,
+      autoRuleFired: autoRuleFired ? Object.assign({}, autoRuleFired) : null
+    };
+
+    const refined = window.TableRefiner.refine(t, hr, ds, currentFoldedLabel);
+    currentRefined = refined;
+
+    // Update header rows & data start inputs to refined state
+    headerRowsSelect.value = String(refined.headerRowCount);
+    dataStartInput.value = String(refined.dataStartRow);
+
+    // Lock controls while refined (Defects 1 & 4)
+    headerRowsSelect.disabled = true;
+    dataStartInput.disabled = true;
+    if (btnRefineTable) {
+      btnRefineTable.disabled = true;
+      btnRefineTable.title = 'Already refined (Undo to edit)';
+    }
+
+    // Hide Auto badge while refined to prevent rule collision (Defect 4)
+    if (autoRuleBadge) {
+      autoRuleBadge.style.display = 'none';
+    }
+
+    // Display refined badge with friendly rule name (Defect 4)
+    if (refineRuleBadge) {
+      refineRuleBadge.style.display = '';
+      const rName = refined.ruleName || refined.rule;
+      refineRuleBadge.innerHTML = `✨ <strong>[${esc(rName)}]</strong> ${esc(refined.diagnostic)} <span class="refined-locked-hint">Refined view (Undo to edit)</span>`;
+    }
+    if (btnUndoRefine) {
+      btnUndoRefine.style.display = '';
+    }
+
+    renderSelectedTable();
+  }
+
+  function undoRefineTableForm() {
+    if (!preRefineState) return;
+
+    headerRowsSelect.value = String(preRefineState.headerRowCount);
+    dataStartInput.value = String(preRefineState.dataStartRow);
+    currentFoldedLabel = preRefineState.foldedLabel ? Object.assign({}, preRefineState.foldedLabel) : null;
+    autoRuleFired = preRefineState.autoRuleFired;
+
+    headerRowsSelect.disabled = false;
+    dataStartInput.disabled = false;
+    if (btnRefineTable) {
+      btnRefineTable.disabled = false;
+      btnRefineTable.title = 'Auto Refine table form to exactly one header row';
+    }
+
+    currentRefined = null;
+    preRefineState = null;
+
+    if (refineRuleBadge) refineRuleBadge.style.display = 'none';
+    if (btnUndoRefine) btnUndoRefine.style.display = 'none';
+
+    // Restore auto badge if auto was active
+    if (autoRuleFired) {
+      autoRuleBadge.style.display = '';
+      autoRuleBadge.className = autoRuleFired.warning ? 'auto-rule-badge auto-rule-warn' : 'auto-rule-badge';
+      autoRuleBadge.textContent = (autoRuleFired.warning ? '⚠ ' : '⚡ ') + autoRuleFired.ruleExplanation;
+    }
+
+    renderSelectedTable();
+  }
+
+  // ─── Header Recovery (D2T-S1.3) ───
+
+  function applyRecoverHeader() {
+    if (selectedPhysicalIndex <= 0 || !parseResult) return;
+    const t = getActiveTable();
+    if (!t) return;
+
+    if (currentRecovered) {
+      if (recoverRuleBadge) {
+        recoverRuleBadge.style.display = '';
+        const prev = recoverRuleBadge.innerHTML;
+        if (!prev.includes('already recovered')) {
+          recoverRuleBadge.innerHTML = prev + ' <span class="badge-already-recovered">(already recovered)</span>';
+        }
+      }
+      return;
+    }
+
+    const hr = parseInt(headerRowsSelect.value, 10);
+    // Applies ONLY to a table T with no header rows (Auto Rule 4, or 0 header rows after manual change)
+    // Never touches a table that already has header rows
+    if (hr > 0 || (currentRefined && currentRefined.headerRowCount > 0)) {
+      if (recoverRuleBadge) {
+        recoverRuleBadge.style.display = '';
+        recoverRuleBadge.className = 'recover-rule-badge';
+        recoverRuleBadge.innerHTML = 'ℹ Table already has header rows (not applicable)';
+      }
+      return;
+    }
+
+    preRecoverState = {
+      headerRowCount: hr,
+      dataStartRow: Math.max(parseInt(dataStartInput.value, 10) || 0, 0),
+      currentRefined: currentRefined,
+      currentFoldedLabel: currentFoldedLabel ? Object.assign({}, currentFoldedLabel) : null,
+      autoRuleFired: autoRuleFired ? Object.assign({}, autoRuleFired) : null,
+    };
+
+    const isData = new Set(parseResult.tables.filter(isTableWithData).map(x => x.physicalIndex));
+    const recResult = window.HeaderRecovery.recover(t, parseResult.tables, isData, hr);
+
+    if (!recResult.success) {
+      if (recoverRuleBadge) {
+        recoverRuleBadge.style.display = '';
+        recoverRuleBadge.className = 'recover-rule-badge';
+        recoverRuleBadge.innerHTML = `⚠ ${esc(recResult.message)}`;
+      }
+      return;
+    }
+
+    currentRecovered = recResult;
+    headerRowsSelect.value = '1';
+    dataStartInput.value = '0';
+
+    if (recoverRuleBadge) {
+      recoverRuleBadge.style.display = '';
+      recoverRuleBadge.className = 'recover-rule-badge';
+      recoverRuleBadge.innerHTML = `📥 <strong>[Recovered]</strong> from #${recResult.sourcePhysicalIndex} row 0 (${esc(recResult.signals.join(', '))}) <span class="recovered-hint">(Undo to restore)</span>`;
+    }
+    if (btnUndoRecover) {
+      btnUndoRecover.style.display = '';
+    }
+
+    populateTableDropdown();
+    renderSelectedTable();
+  }
+
+  function undoRecoverHeader() {
+    if (!preRecoverState) return;
+    const t = getActiveTable();
+    if (currentRecovered && t) {
+      const H = parseResult.tables.find(x => x.physicalIndex === currentRecovered.sourcePhysicalIndex);
+      if (H && H.usedAsHeaderOf === t.physicalIndex) {
+        delete H.usedAsHeaderOf;
+      }
+    }
+
+    headerRowsSelect.value = String(preRecoverState.headerRowCount);
+    dataStartInput.value = String(preRecoverState.dataStartRow);
+    currentRefined = preRecoverState.currentRefined;
+    currentFoldedLabel = preRecoverState.currentFoldedLabel;
+    autoRuleFired = preRecoverState.autoRuleFired;
+
+    currentRecovered = null;
+    preRecoverState = null;
+
+    if (recoverRuleBadge) {
+      recoverRuleBadge.style.display = 'none';
+      recoverRuleBadge.innerHTML = '';
+    }
+    if (btnUndoRecover) {
+      btnUndoRecover.style.display = 'none';
+    }
+
+    populateTableDropdown();
+    renderSelectedTable();
+  }
+
+  function navigateToSource(tableIndex, rowIndex, cellIndex) {
+    const sourceTab = document.querySelector('.content-tab[data-panel="sourcePanel"]');
+    if (sourceTab) {
+      switchTab(sourceTab);
+      const existingNotice = sourcePanel.querySelector('.nav-source-notice');
+      if (existingNotice) existingNotice.remove();
+      const notice = document.createElement('div');
+      notice.className = 'notice notice-info nav-source-notice';
+      notice.innerHTML = `📍 <strong>Source Navigation:</strong> Group title cell for Table #${tableIndex}, Row ${rowIndex}, Cell ${cellIndex}`;
+      sourcePanel.prepend(notice);
+    }
+  }
+
+  function computeDocumentTitlePaths() {
+    if (!window.HeaderRecovery || !parseResult || !parseResult.tables) return;
+    const dataIndices = parseResult.tables.filter(isTableWithData).map(x => x.physicalIndex);
+    const isDataSet = new Set(dataIndices);
+    const recMap = new Map();
+    for (const t of parseResult.tables) {
+      if (isDataSet.has(t.physicalIndex)) {
+        const chk = window.HeaderRecovery.canRecover(t, parseResult.tables, isDataSet, 0);
+        if (chk.eligible && chk.H) {
+          recMap.set(t.physicalIndex, chk.H.physicalIndex);
+        }
+      }
+    }
+    window.HeaderRecovery.computeAllTitlePaths(parseResult.tables, dataIndices, recMap);
+  }
+
+  // ─── Batch Run (D2T-S1.2 Batch B1) ───
+
+  function runBatchProcess() {
+    if (!parseResult || !parseResult.tables || parseResult.tables.length === 0) {
+      alert('Please load a .docx file before running the batch.');
+      return;
+    }
+
+    computeDocumentTitlePaths();
+
+    // Filter tables using "Only Tables with data" predicate
+    const filteredTables = parseResult.tables.filter(isTableWithData);
+    if (filteredTables.length === 0) {
+      alert('No tables found in "Only Tables with data" filter.');
+      return;
+    }
+
+    const docName = fileName || 'document.docx';
+    const baseName = docName.replace(/\.docx?$/i, '');
+
+    // 1. Build File 1: <docname>_before.html BEFORE anything changes
+    const beforeHtml = window.BatchExporter.generateBeforeHtml(filteredTables, baseName);
+
+    // 2. Run real handlers: applyAutoHeader then applyRefineTableForm on each table in document order
+    const batchResults = [];
+
+    for (let i = 0; i < filteredTables.length; i++) {
+      const t = filteredTables[i];
+      try {
+        // Select table (updates selector, card, etc.)
+        selectTableByPhysicalIndex(t.physicalIndex);
+
+        // Run real Auto handler
+        applyAutoHeader();
+        const autoSugg = autoRuleFired;
+
+        // Run real Refine handler
+        applyRefineTableForm();
+        const refRes = currentRefined;
+
+        // Run real Recover handler (Step 1)
+        applyRecoverHeader();
+        const recRes = currentRecovered;
+
+        batchResults.push({
+          table: t,
+          status: 'OK',
+          autoRule: autoSugg ? autoSugg.ruleName : 'Auto',
+          refineRule: refRes ? (refRes.ruleName || refRes.rule) : 'Nothing to refine',
+          refined: refRes,
+          recovered: recRes,
+          error: null
+        });
+      } catch (err) {
+        batchResults.push({
+          table: t,
+          status: 'FAILED',
+          autoRule: autoRuleFired ? autoRuleFired.ruleName : 'Unknown',
+          refineRule: 'Failed',
+          refined: null,
+          error: err.message || String(err)
+        });
+      }
+    }
+
+    // 3. Build File 2: <docname>_after.html AFTER the batch
+    const afterHtml = window.BatchExporter.generateAfterHtml(batchResults, baseName);
+
+    // 4. Build File 3: <docname>_compare.html (side-by-side comparison)
+    const compareHtml = window.BatchExporter.generateCompareHtml(filteredTables, batchResults, baseName);
+
+    // 5. Trigger browser downloads
+    if (window.BatchExporter && typeof window.BatchExporter.downloadHtmlFile === 'function') {
+      window.BatchExporter.downloadHtmlFile(baseName + '_before.html', beforeHtml);
+      setTimeout(() => {
+        window.BatchExporter.downloadHtmlFile(baseName + '_after.html', afterHtml);
+      }, 250);
+      setTimeout(() => {
+        window.BatchExporter.downloadHtmlFile(baseName + '_compare.html', compareHtml);
+      }, 500);
+    }
+
+    // Summary notice
+    const okCount = batchResults.filter(r => r.status === 'OK').length;
+    const failedCount = batchResults.filter(r => r.status === 'FAILED').length;
+    if (refineRuleBadge) {
+      refineRuleBadge.style.display = '';
+      refineRuleBadge.innerHTML = `⚡ <strong>Batch Run Complete:</strong> ${okCount} OK, ${failedCount} FAILED. Downloaded before/after HTML.`;
+    }
+
+    // The batch leaves the app on the last table with Undo available
+    return {
+      beforeHtml,
+      afterHtml,
+      compareHtml,
+      batchResults,
+      okCount,
+      failedCount
+    };
+  }
+
+  // ─── Table Rendering ───
+
+  function getActiveTable() {
+    if (!parseResult || selectedPhysicalIndex <= 0) return null;
+    return parseResult.tables.find(x => x.physicalIndex === selectedPhysicalIndex) || null;
+  }
+
+  function renderSelectedTable() {
+    const t = getActiveTable();
+    if (!t) return;
+
+    // Render Title Path Bar (Step 2)
+    if (titlePathBar && window.HeaderRecovery) {
+      const dataIndices = parseResult.tables.filter(isTableWithData).map(x => x.physicalIndex);
+      const recMap = new Map();
+      if (currentRecovered) recMap.set(t.physicalIndex, currentRecovered.sourcePhysicalIndex);
+      const allPaths = window.HeaderRecovery.computeAllTitlePaths(parseResult.tables, dataIndices, recMap);
+      const info = allPaths.get(t.physicalIndex);
+      if (info && info.path && info.path.length > 0) {
+        titlePathBar.style.display = 'flex';
+        let tHtml = '<strong>Title:</strong> ';
+        tHtml += info.path.map(p =>
+          `<a href="#t${p.tableIndex}" class="title-path-link" onclick="app.selectTableByPhysicalIndex(${p.tableIndex}); return false;" title="Source: #${p.tableIndex} row 0">#${p.tableIndex} row 0: ${esc(p.text)}</a>`
+        ).join(' &gt; ');
+        if (info.inherited) {
+          tHtml += ' <span class="badge-inherited">(inherited)</span>';
+        }
+        titlePathBar.innerHTML = tHtml;
+      } else {
+        titlePathBar.style.display = 'none';
+        titlePathBar.innerHTML = '';
+      }
+    }
+
+    const headerRows = parseInt(headerRowsSelect.value, 10);
+    const dataStart = Math.max(parseInt(dataStartInput.value, 10) || 0, 0);
+
+    renderGrid(t, headerRows, dataStart);
+    renderSource(t);
+    renderCsvPreview(t, headerRows, dataStart);
+    renderProvenance(t, headerRows, dataStart);
+  }
+
+  // ─── Grid Rendering ───
+
+  function renderGrid(table, headerRows, dataStart) {
+    const grid = table.grid;
+    if (!grid || grid.length === 0) {
+      gridPanel.innerHTML = '<div class="notice notice-info">This table has no rows.</div>';
+      return;
+    }
+
+    // ─── Render Recovered Header Form (D2T-S1.3) ───
+    if (currentRecovered) {
+      const recHeaders = currentRecovered.headers;
+      let html = '<div class="grid-container"><table class="data-grid"><tbody>';
+      // Recovered Header row (single row)
+      html += '<tr class="header-row"><td class="row-idx">H</td>';
+      for (let c = 0; c < recHeaders.length; c++) {
+        const hp = (currentRecovered.headerProvenance && currentRecovered.headerProvenance[c]) || {};
+        const srcTitle = `Source: #${currentRecovered.sourcePhysicalIndex} Row 0 Cell ${c} (signals: ${currentRecovered.signals.join(', ')})`;
+        html += `<th class="recovered-header-cell" title="${esc(srcTitle)}"><strong>${esc(recHeaders[c])}</strong> <small>[recovered]</small></th>`;
+      }
+      html += '</tr>';
+
+      // Data rows: all rows of T
+      for (let r = 0; r < grid.length; r++) {
+        const row = grid[r];
+        html += `<tr><td class="row-idx" title="Source Row ${r}">${r}</td>`;
+        for (let c = 0; c < table.colCount; c++) {
+          const cell = row[c];
+          let content = '';
+          if (cell && cell.spanned) {
+            content = '<span class="spanned-cell">⬅ span</span>';
+          } else if (cell && cell.hasImage) {
+            content = '<span class="image-cell">🖼 [image]</span>';
+          } else if (cell && cell.hasNestedTable) {
+            content = `<span class="nested-cell">📋 [nested table ${cell.nestedTableIndex || ''}]</span>`;
+          } else {
+            content = esc(cell ? cell.text : '');
+          }
+          html += `<td title="Orig Row ${r}, Cell ${c}">${content}</td>`;
+        }
+        html += '</tr>';
+      }
+      html += '</tbody></table></div>';
+
+      const banner = `<div class="notice notice-info">` +
+        `<strong>Recovered Header:</strong> from #${currentRecovered.sourcePhysicalIndex} row 0 ` +
+        `(signals: ${esc(currentRecovered.signals.join(', '))}). Exactly 1 header row (${grid.length} data rows).</div>`;
+
+      gridPanel.innerHTML = banner + html;
+      return;
+    }
+
+    // ─── Render Refined Table Form (D2T-S1.2) ───
+    if (currentRefined) {
+      const refinedHeaders = currentRefined.headers;
+      const hasGroup = Boolean(currentRefined.groupColumn);
+      const excludeRows = currentRefined.excludeRows || [];
+
+      let html = '<div class="grid-container"><table class="data-grid"><tbody>';
+      // Refined Header row (single row)
+      html += '<tr class="header-row"><td class="row-idx">H</td>';
+      for (let c = 0; c < refinedHeaders.length; c++) {
+        const hp = (currentRefined.headerProvenance && currentRefined.headerProvenance[c]) || {};
+        const srcTitle = (hp.sourceCells || []).map(sc => `R${sc.rowIndex} C${sc.cellIndex} ("${sc.rawText}")`).join(' + ');
+        html += `<th title="${esc(srcTitle)}"><strong>${esc(refinedHeaders[c])}</strong></th>`;
+      }
+      html += '</tr>';
+
+      // Refined Data rows
+      let outRowIdx = 0;
+      for (let r = currentRefined.dataStartRow; r < grid.length; r++) {
+        if (excludeRows.includes(r)) continue;
+        const row = grid[r];
+        html += `<tr><td class="row-idx" title="Source Row ${r}">${r}</td>`;
+        if (hasGroup) {
+          const gSrc = currentRefined.groupSource || { tableIndex: table.physicalIndex, rowIndex: 0, cellIndex: 0, span: 1 };
+          html += `<td class="group-cell" title="Derived from Title (Table #${gSrc.tableIndex}, Row ${gSrc.rowIndex}, Cell ${gSrc.cellIndex}, Span ${gSrc.span}): ${esc(currentRefined.groupColumn)} -> Row ${r}">` +
+            `<a href="#source-title-r0-c${gSrc.cellIndex}" class="group-source-link" onclick="app.navigateToSource(${gSrc.tableIndex}, ${gSrc.rowIndex}, ${gSrc.cellIndex}); return false;" data-target-table="${gSrc.tableIndex}" data-target-row="${gSrc.rowIndex}" data-target-cell="${gSrc.cellIndex}" data-destination-row="${r}">${esc(currentRefined.groupColumn)}</a>` +
+            ` <span class="badge-derived" title="Derived/repeated value; earns no coverage credit">derived</span>` +
+            `</td>`;
+        }
+        for (let c = 0; c < table.colCount; c++) {
+          const cell = row[c];
+          let content = '';
+          if (cell && cell.spanned) {
+            content = '<span class="spanned-cell">⬅ span</span>';
+          } else if (cell && cell.hasImage) {
+            content = '<span class="image-cell">🖼 [image]</span>';
+          } else if (cell && cell.hasNestedTable) {
+            content = `<span class="nested-cell">📋 [nested table ${cell.nestedTableIndex || ''}]</span>`;
+          } else {
+            content = esc(cell ? cell.text : '');
+          }
+          html += `<td title="Orig Row ${r}, Cell ${c}">${content}</td>`;
+        }
+        html += '</tr>';
+        outRowIdx++;
+      }
+      html += '</tbody></table></div>';
+
+      const banner = `<div class="notice notice-info">` +
+        `<strong>Refined Table Form [${esc(currentRefined.rule)}]:</strong> ${esc(currentRefined.diagnostic)} ` +
+        `(${refinedHeaders.length} columns, ${outRowIdx} data rows). Exactly 1 header row.</div>`;
+
+      gridPanel.innerHTML = banner + html;
+      return;
+    }
+
+    let html = '<div class="grid-container"><table class="data-grid">';
+
+    for (let r = 0; r < grid.length; r++) {
+      const row = grid[r];
+      const isHeader = r < headerRows;
+      const isFoldedLabelRow = currentFoldedLabel && r === currentFoldedLabel.labelRow;
+
+      if (r === 0) html += '<tbody>';
+
+      let rowCls = '';
+      if (isHeader) rowCls = 'header-row';
+      else if (isFoldedLabelRow) rowCls = 'label-row';
+
+      html += `<tr class="${rowCls}">`;
+      html += `<td class="row-idx">${isFoldedLabelRow ? '🏷 ' + r : r}</td>`;
+
+      for (let c = 0; c < row.length; c++) {
+        const cell = row[c];
+        let cls = '';
+        let content = '';
+
+        const isFoldedTargetCell = isHeader && currentFoldedLabel &&
+          r === currentFoldedLabel.targetRow && c === currentFoldedLabel.targetCol;
+
+        if (isFoldedTargetCell) {
+          cls = 'folded-header-cell';
+          const origText = cell && cell.text ? String(cell.text).trim() : '';
+          const foldedVal = origText ? `${currentFoldedLabel.text} ${origText}` : currentFoldedLabel.text;
+          content = `<strong>${esc(foldedVal)}</strong> <small title="Folded from Row ${currentFoldedLabel.labelRow}">[folded: ${esc(currentFoldedLabel.text)}]</small>`;
+        } else if (isFoldedLabelRow) {
+          content = `<em>${esc(cell.text || '')}</em> <small>[label row - excluded from data]</small>`;
+        } else if (cell.spanned) {
+          cls = 'spanned-cell';
+          content = '⬅ span';
+        } else if (cell.hasImage) {
+          cls = 'image-cell';
+          content = '🖼 [image]';
+        } else if (cell.hasNestedTable) {
+          cls = 'nested-cell';
+          content = `📋 [nested table ${cell.nestedTableIndex || ''}]`;
+        } else {
+          content = esc(cell.text);
+        }
+
+        const tag = isHeader ? 'th' : 'td';
+        html += `<${tag} class="${cls}" title="Row ${cell.provenance?.rowIndex}, Cell ${cell.provenance?.cellIndex}">${content}</${tag}>`;
+      }
+
+      html += '</tr>';
+    }
+
+    html += '</tbody></table></div>';
+
+    // Header/data indicator banners
+    let indicators = '';
+    if (currentFoldedLabel) {
+      indicators += `<div class="notice notice-info">` +
+        `<strong>Rule 2 Folded Label:</strong> "${esc(currentFoldedLabel.text)}" from row ${currentFoldedLabel.labelRow} folded into header cell 0. ` +
+        `Row ${currentFoldedLabel.labelRow} excluded from data projection. Data starts at row ${dataStart}.</div>`;
+    } else if (headerRows > 0) {
+      indicators += `<div class="notice notice-info">Header rows: 0–${headerRows - 1}. Data starts at row ${dataStart}.</div>`;
+    } else {
+      indicators += '<div class="notice notice-info">No header rows selected (Rule 4 / manual). All rows treated as data from row 0.</div>';
+    }
+
+    gridPanel.innerHTML = indicators + html;
+  }
+
+  // ─── Source XML Rendering ───
+
+  function navigateToSource(tableIndex, rowIndex, cellIndex) {
+    const sourceTab = contentTabs.querySelector('[data-panel="sourcePanel"]');
+    if (sourceTab) switchTab(sourceTab);
+  }
+
+  function renderSource(table) {
+    const xml = table.sourceXml || '(source not available)';
+    const highlighted = esc(xml)
+      .replace(/(&lt;\/?)([\w:]+)/g, '$1<span class="tag">$2</span>')
+      .replace(/([\w:]+)(=)/g, '<span class="attr">$1</span>$2')
+      .replace(/"([^"]*)"/g, '"<span class="val">$1</span>"');
+
+    sourcePanel.innerHTML = `<div class="source-view">${highlighted}</div>`;
+  }
+
+  // ─── CSV Preview ───
+
+  function renderCsvPreview(table, headerRows, dataStart) {
+    const exporter = new window.CsvExporter();
+    const options = {
+      foldedLabel: currentFoldedLabel,
+      refined: currentRefined,
+      recovered: currentRecovered,
+    };
+    const { csv } = exporter.exportTable(table, headerRows, dataStart, options);
+
+    const notice = '<div class="notice notice-warn">' +
+      '⚠ Spreadsheet programs may reinterpret leading-zero strings (e.g. "031" → 31). ' +
+      'To preserve them, import the CSV as text: in Excel, use Data → From Text/CSV and set all columns to "Text".' +
+      '</div>';
+
+    csvPanel.innerHTML = notice + `<pre class="csv-preview">${esc(csv)}</pre>`;
+  }
+
+  // ─── Provenance ───
+
+  function renderProvenance(table, headerRows, dataStart) {
+    const exporter = new window.CsvExporter();
+    const options = {
+      foldedLabel: currentFoldedLabel,
+      refined: currentRefined,
+      recovered: currentRecovered,
+    };
+    const { provenance } = exporter.exportTable(table, headerRows, dataStart, options);
+
+    let html = '<div class="notice notice-info">Every CSV cell has a companion provenance record ' +
+      'linking it to the original file hash, XML part, table, row, and cell index.</div>';
+
+    html += '<div style="overflow:auto; max-height:calc(100vh - 300px)">';
+    html += '<table class="provenance-table"><thead><tr>' +
+      '<th>CSV Row</th><th>CSV Col</th><th>Header</th><th>Raw Text</th>' +
+      '<th>Is Header</th><th>Rule</th><th>Source Cells</th><th>Placeholder</th><th>Source Table</th><th>File Hash</th><th>Part</th>' +
+      '</tr></thead><tbody>';
+
+    for (const p of provenance) {
+      let sourceInfo = '—';
+      if (p.recovered) {
+        sourceInfo = `<span style="color:#2ac3de">#${p.sourceTableIndex} R${p.sourceRowIndex} C${p.sourceCellIndex} (signals: ${p.signals ? p.signals.join(', ') : ''})</span>`;
+      } else if (p.sourceCells && p.sourceCells.length > 0) {
+        sourceInfo = p.sourceCells.map(sc => `<span style="color:var(--green)">R${sc.rowIndex} C${sc.cellIndex} ("${esc(sc.rawText)}")</span>`).join(' + ');
+      } else if (p.foldedFrom) {
+        sourceInfo = `<span style="color:var(--green)">R${p.foldedFrom.sourceRowIndex} C${p.foldedFrom.sourceCellIndex} ("${esc(p.foldedFrom.rawText)}")</span>`;
+      } else if (p.sourceRowIndex >= 0) {
+        sourceInfo = `R${p.sourceRowIndex} C${p.sourceCellIndex}`;
+      }
+
+      html += '<tr>' +
+        `<td>${p.csvRow}</td>` +
+        `<td>${p.csvCol}</td>` +
+        `<td>${esc(p.headerLabel)}</td>` +
+        `<td class="mono">${esc(truncate(p.rawText, 50))}</td>` +
+        `<td>${p.isHeader ? '✓' : ''}</td>` +
+        `<td>${p.recovered ? '<span class="badge-sm" style="color:#2ac3de">Recovered</span>' : (p.rule ? `<span class="badge-sm">${esc(p.rule)}</span>` : '—')}</td>` +
+        `<td>${sourceInfo}</td>` +
+        `<td>${p.placeholder ? `<span class="badge-sm" style="color:var(--yellow)">${esc(p.placeholder)}</span>` : '—'}</td>` +
+        `<td>#${p.sourceTableIndex}</td>` +
+        `<td class="mono">${p.sourceFileHash ? p.sourceFileHash.substring(0, 10) + '…' : '—'}</td>` +
+        `<td>${esc(p.sourcePart)}</td>` +
+        '</tr>';
+    }
+
+    html += '</tbody></table></div>';
+    provenancePanel.innerHTML = html;
+  }
+
+  // ─── No Tables State ───
+
+  function showNoTablesState() {
+    tableControls.style.display = 'none';
+    contentTabs.style.display = 'none';
+
+    if (parseResult && parseResult.imageCount > 0) {
+      gridPanel.innerHTML = `<div class="image-doc-notice">
+        <h3>⚠ No native tables found</h3>
+        <p>This document contains <span class="image-count">${parseResult.imageCount} image(s)</span> 
+        but zero native Word tables.</p>
+        <p style="margin-top:8px; color:var(--text-muted)">
+          Images (screenshots of tables) cannot be converted to structured data without OCR, 
+          which this prototype does not perform. The images are present but not extracted as tables.</p>
+        <p style="margin-top:8px; color:var(--text-muted)">
+          Status: <strong>not-converted</strong> — these are image evidence, not native table cells.</p>
+      </div>`;
+    } else {
+      gridPanel.innerHTML = '<div class="empty-state"><div class="icon">📭</div>' +
+        '<h3>No tables found</h3><p>This document contains no native Word tables.</p></div>';
+    }
+  }
+
+  // ─── Tab Switching ───
+
+  function switchTab(btn) {
+    const panelId = btn.dataset.panel;
+    contentTabs.querySelectorAll('.content-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    [gridPanel, sourcePanel, csvPanel, provenancePanel].forEach(p => {
+      p.classList.toggle('hidden', p.id !== panelId);
+    });
+  }
+
+  // ─── CSV Download ───
+
+  function downloadSelectedCsv() {
+    const t = getActiveTable();
+    if (!t || !parseResult) return;
+    const headerRows = parseInt(headerRowsSelect.value, 10);
+    const dataStart = Math.max(parseInt(dataStartInput.value, 10) || 0, 0);
+    const exporter = new window.CsvExporter();
+    const options = {
+      foldedLabel: currentFoldedLabel,
+      refined: currentRefined,
+      recovered: currentRecovered,
+    };
+    const { csv } = exporter.exportTable(t, headerRows, dataStart, options);
+
+    const safeName = (fileName || 'table').replace(/\.docx$/i, '');
+    const recTag = currentRecovered ? '_recovered' : (currentRefined ? `_refined_${currentRefined.rule.toLowerCase()}` : `_h${headerRows}`);
+    const csvName = `${safeName}_table${t.physicalIndex}${recTag}.csv`;
+    exporter.downloadCsv(csv, csvName);
+  }
+
+  // ─── Stats ───
+
+  function updateStats() {
+    if (!parseResult) return;
+    $('statTables').textContent = parseResult.totalCount;
+    $('statBody').textContent = parseResult.bodyLevelCount;
+    $('statNested').textContent = parseResult.nestedCount;
+    $('statRows').textContent = parseResult.tables.reduce((s, t) => s + t.rowCount, 0);
+  }
+
+  // ─── Helpers ───
+
+  function setStatus(msg, isError) {
+    statusMsg.textContent = msg;
+    statusMsg.style.color = isError ? 'var(--red)' : 'var(--yellow)';
+  }
+
+  function esc(str) {
+    if (str == null) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function truncate(str, max) {
+    if (str == null) return '';
+    str = String(str);
+    return str.length > max ? str.substring(0, max) + '…' : str;
+  }
+
+  // ─── Public API ───
+
+  window.app = {
+    handleFile,
+    navigateToSource,
+    runBatchProcess,
+    onFilterChange,
+    onTableSelectChange,
+    selectTableByPhysicalIndex,
+    applyAutoHeader,
+    applyRefineTableForm,
+    undoRefineTableForm,
+    applyRecoverHeader,
+    undoRecoverHeader,
+    getCurrentRecovered: () => currentRecovered,
+    getCurrentRefined: () => currentRefined,
+    getSelectedPhysicalIndex: () => selectedPhysicalIndex,
+    switchTab,
+    downloadSelectedCsv,
+    isTableWithData,
+  };
+
+})();
