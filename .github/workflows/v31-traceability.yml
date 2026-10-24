@@ -41,6 +41,13 @@ jobs:
             exit 1
           }
           grep -o '<pre id="test-result">PASS: Browser DOCX extraction[^<]*' /tmp/v31-browser-dom.html
+      - name: Retain public R5 fixture for private local comparison
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-r5-source
+          path: R5.docx
+          retention-days: 1
       - name: Independent R5 source oracle (checked-in original DOCX)
         run: |
           python3 tests/r5_source_oracle.py > tests/.r5_oracle.json
