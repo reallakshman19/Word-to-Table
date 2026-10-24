@@ -94,7 +94,7 @@ const DiffEngine = (() => {
                     const match = textStatus(src.textOriginal, out.text, cfg);
                     if (match === 'PRESERVED_EXACT' || match === 'PRESERVED_NORMALIZED') {
                         status = 'CANDIDATE_MATCH';
-                        reason = 'Text at same position; no independent companion provenance';
+                        reason = 'Text at source-table-number/row/column hint; candidate only, not identity proof';
                         used.add(out.outputId);
                     } else {
                         status = 'AMBIGUOUS'; reason = 'Position candidate differs; no transformation provenance';
@@ -116,10 +116,17 @@ const DiffEngine = (() => {
         const total = Object.values(statuses).reduce((a,b) => a+b,0);
         if (total !== source.length) throw new Error('Audit accounting mismatch');
         const diagnostics = sourceLedger.diagnostics || [];
+        const represented = new Set(outputLedger.sourceTableNumberHints || []);
+        const omittedSourceTables = mode === 'companion' && outputLedger.reportProfile ?
+            (sourceLedger.tables || []).filter(t=>!t.parentTableId)
+                .map((t,i)=>({sourceTableId:t.tableId,tableNumber:i+1}))
+                .filter(t=>!represented.has(t.tableNumber)) : [];
         return {
             schemaVersion:1, mode, rows, statuses, sourceTotal:source.length,
             tableCount:(sourceLedger.tables || []).length,
             outputTotal:target.length, extraOutput:extras, diagnostics,
+            omittedSourceTables, targetPresentation:outputLedger.presentation || null,
+            reportFilterClaim: outputLedger.reportFilterClaim || null,
             dispositionCoverage:total === source.length ? 1 : 0,
             qualified:trustedProvenance && diagnostics.length === 0 &&
                 !statuses.CANDIDATE_MATCH && !statuses.AMBIGUOUS &&

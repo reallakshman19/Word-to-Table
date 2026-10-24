@@ -31,3 +31,11 @@ Phase A under construction; not production-ready. Do not merge/deploy until expl
 
 ## F6 browser export artifact scope
 Browser mode now produces selected-table CSV files and a native OOXML XLSX bundle using bundled JSZip. It reads back the exact prepared bytes, checks values against selected table grids and publishes file-specific SHA-256 hashes (including selected table identities) in the audit UI/export metadata. These prove **pre-download payload parity**, not persisted disk bytes and not original DOCX completeness. Server mode remains marked unverified until the backend can attest on-disk artifacts; existing local-server behavior is not rewritten.
+
+## Companion refined-table report support — R5_after structure
+- Browser companion parser recognizes HTML sections with `section.table-section[id=tN]`, using `tN` as an unverified *ordinal hint* to Word table N (never as independently verified identity).
+- Skip generated display-only row-number column, and derived Group column cells. Retain counts of excluded decoration separately; source table numbering no longer drifts after a missing table.
+- Source row hints from `title="Source row N"` are used for provisional candidate positions; no false PRESERVED status.
+- Display-only report headings, TOC and summary are not treated as original DOCX paragraphs.
+- Expose omitted source tables explicitly; report's "Only Tables with data" is not proof of an actual converter filtering event.
+- No uploaded customer HTML is committed into this repository.

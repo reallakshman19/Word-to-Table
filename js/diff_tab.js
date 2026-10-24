@@ -38,6 +38,11 @@ const DiffTab = (() => {
         });
         const results=audit.result;
         const statuses=results.statuses;
+        if(results.omittedSourceTables && results.omittedSourceTables.length){
+            const examples=results.omittedSourceTables.map(x=>'#'+x.tableNumber).join(', ');
+            add(el,'p','Companion report omits source tables: '+examples+
+                '. Claimed filtering is metadata only; no verified filter event.','audit-warning');
+        }
         if(state.section==='Summary') {
             const summary=add(el,'div',undefined,'audit-summary');
             [['Inventoried',results.sourceTotal],['Disposition coverage',(results.dispositionCoverage*100)+'%'],
@@ -46,6 +51,11 @@ const DiffTab = (() => {
                     const card=add(summary,'div',undefined,'audit-metric');
                     add(card,'strong',pair[1]);add(card,'span',pair[0]);
                 });
+            if(results.targetPresentation){
+                add(el,'p','Display-only: '+results.targetPresentation.rowIndexCells+
+                    ' row indexes, '+results.targetPresentation.derivedGroupCells+
+                    ' group cells excluded from source correspondence.','audit-muted');
+            }
             if(!results.qualified || !audit.meta.sourceSha256) {
                 add(el,'p','HOLD: this report does not establish full source fidelity. Examine unresolved, unsupported and extra output.','audit-warning');
             }

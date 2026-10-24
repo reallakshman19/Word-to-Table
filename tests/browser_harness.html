@@ -101,6 +101,28 @@ async function smoke() {
       throw Error('F4 CSS-hidden text incorrectly certified visible');
     if(!nestedSource.hasCoverageExceptions || !nestedSource.diagnostics.some(x=>x.feature==='nestedTable'))
       throw Error('F5 nested-table limitation not declared');
+    // Uploaded R5_after HTML structure represented by invented values.
+    // Original t2 is intentionally absent; anchors t1/t3 must not ordinal-shift.
+    const refinedFixture='<html><body><header><h1>After Batch</h1>'+
+      '<div class="doc-meta">Filter: Only Tables with data (2 tables)</div></header>'+
+      '<section class="table-section" id="t1"><h3>#1</h3><table class="data-table">'+
+      '<thead><tr><th class="row-idx">H</th><th>Group</th><th>Material</th></tr></thead>'+
+      '<tbody><tr><td class="row-idx" title="Source row 2">2</td>'+
+      '<td class="group-cell">Pipe</td><td>ASTM A106</td></tr></tbody></table></section>'+
+      '<section class="table-section" id="t3"><h3>#3</h3><table class="data-table">'+
+      '<thead><tr><th class="row-idx">H</th><th>Code</th></tr></thead>'+
+      '<tbody><tr><td class="row-idx" title="Source row 1">1</td><td>ALPHA</td></tr></tbody></table></section>'+
+      '</body></html>';
+    const refined=frame.eval('OutputInventory').parse(refinedFixture,'companion');
+    if(refined.reportProfile!=='R5_REFINED_TABLES' || refined.tableCount!==2 ||
+        refined.presentation.rowIndexCells!==4 ||
+        refined.presentation.derivedGroupCells!==2)
+      throw Error('Companion report display-only column handling failed');
+    const alpha=refined.occurrences.find(x=>x.text==='ALPHA');
+    if(!alpha || alpha.tableIndex!==2 || alpha.rowIndex!==1 || alpha.colIndex!==0)
+      throw Error('t3 source table/row hints corrupted by omitted t2');
+    if(refined.occurrences.some(x=>x.text==='Pipe' || x.text==='2' || x.text==='1'))
+      throw Error('Display-only group/index text leaked into audit output');
     // F7: standalone reports must render orphan outputs and coverage exceptions.
     const trial=JSON.parse(JSON.stringify(frame.eval('appState.audit')));
     trial.meta.exportArtifacts=[{mode:'individual',selectedIndices:[0],preparedBytesVerified:true,
