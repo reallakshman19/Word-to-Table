@@ -30,3 +30,13 @@ test('F3b: deletions are not silently treated as ordinary live text',()=>{
    assert.equal(r.occurrences[0].textOriginal,'RETAINED');
    assert.equal(r.hasCoverageExceptions,true);
 });
+
+test('F5: nested table emits an explicit unsupported-conversion diagnostic',()=>{
+   const p=(s)=>el('p',[el('r',[el('t',[],s)])]);
+   const nested=el('tbl',[el('tr',[el('tc',[p('INNER')])])]);
+   const outer=el('tbl',[el('tr',[el('tc',[p('OUTER'),nested])])]);
+   const ledger=SourceInventory.build(makeDoc(el('body',[outer])),[]);
+   assert.equal(ledger.tables.length,2);
+   assert.ok(ledger.diagnostics.some(d=>d.feature==='nestedTable'));
+   assert.equal(ledger.hasCoverageExceptions,true);
+});

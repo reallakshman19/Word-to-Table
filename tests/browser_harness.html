@@ -40,7 +40,35 @@ async function smoke() {
     const config=doc.querySelector('.main-tab-btn[data-tab="settings"]');
     const macro=doc.querySelector('.main-tab-btn[data-tab="record"]');
     if(!config || config.textContent.trim()!=='Config' || !macro)throw Error('Legacy tabs changed');
-    status.textContent='PASS: Browser DOCX extraction, source inventory, 5 QA occurrences and tab compatibility';
+    // F5: nested Word table rows must not become outer table rows.
+    const nestedXml='<w:document xmlns:w="'+ns+'"><w:body>'+
+      '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>OUTER</w:t></w:r></w:p>'+
+      '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>INNER</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'+
+      '</w:tc></w:tr></w:tbl></w:body></w:document>';
+    const nestedDoc=new frame.DOMParser().parseFromString(nestedXml,'application/xml');
+    const outer=nestedDoc.getElementsByTagNameNS(ns,'tbl')[0];
+    const actualGrid=new frame.DocxParser()._extractTableGrid(outer);
+    if(actualGrid.length!==1 || actualGrid[0][0]!=='OUTER') throw Error('F5 nested table leaked into outer grid');
+    const nestedSource=frame.SourceInventory.build(nestedDoc,[]);
+    if(!nestedSource.hasCoverageExceptions || !nestedSource.diagnostics.some(x=>x.feature==='nestedTable'))
+      throw Error('F5 nested-table limitation not declared');
+    // F7: standalone reports must render orphan outputs and coverage exceptions.
+    const trial=JSON.parse(JSON.stringify(frame.appState.audit));
+    trial.result.extraOutput=[{outputId:'ORPHAN_OUT_777',text:'ORPHAN_TEXT_777'}];
+    trial.result.diagnostics=[{part:'word/header1.xml',feature:'HEADER_EXCEPTION_777'}];
+    const report=frame.AuditExport.standalone(trial);
+    const preview=document.createElement('iframe');
+    document.body.appendChild(preview);
+    preview.srcdoc=report;
+    await new Promise((resolve,reject)=>{
+      preview.addEventListener('load',resolve,{once:true});
+      setTimeout(()=>reject(Error('Report iframe load timeout')),5000);
+    });
+    const reportBody=preview.contentDocument.body.textContent;
+    if(!reportBody.includes('ORPHAN_TEXT_777') || !reportBody.includes('HEADER_EXCEPTION_777'))
+      throw Error('F7 standalone viewer did not render orphan output and coverage exception');
+    preview.remove();
+    status.textContent='PASS: Browser DOCX extraction, F0-F7 negative cases, offline viewer and tab compatibility';
   } catch(e) {
     status.textContent='FAIL: '+(e&&e.stack||e);
   }
