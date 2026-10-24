@@ -33,10 +33,22 @@ document.getElementById('app').addEventListener('load',async()=>{
     if(state.audit.result.qualified)throw Error('R5 self-generated HTML improperly certified source fidelity');
     if(state.audit.meta.sourceSha256!==oracle.sourceSha256)throw Error('R5 audited wrong source bytes');
     if(state.audit.meta.exportArtifactVerified!==false)throw Error('R5 export bytes prematurely attested');
+    // F6: attest actual exported bytes for every R5 table, not just a synthetic table.
+    const allIndices=state.tables.map((_,i)=>i);
+    const exporter=frame.eval('ArtifactExport');
+    const csv=await exporter.prepare(state.tables,allIndices,'individual',false,state.sourceLedger);
+    const xlsx=await exporter.prepare(state.tables,allIndices,'combined',false,state.sourceLedger);
+    if(csv.files.length!==state.tables.length || xlsx.manifest.files[0].sheets.length!==state.tables.length)
+       throw Error('R5 selected-table CSV/XLSX file or sheet inventory mismatch');
+    if(!csv.manifest.preparedBytesVerified || !xlsx.manifest.preparedBytesVerified)
+       throw Error('R5 actual selected export bytes failed parity verification');
+    if(csv.manifest.originalDocxFidelityVerified || xlsx.manifest.originalDocxFidelityVerified)
+       throw Error('R5 export claimed original source fidelity');
     result.textContent='PASS: repo R5 DOCX SHA '+oracle.sourceSha256+
        ' · independent source occurrences '+oracle.supportedOccurrenceCount+
        ' · OOXML tables '+oracle.tableCount+
        ' · extracted tables '+state.tables.length+
+       ' · CSV artifacts '+csv.files.length+' · XLSX sheets '+xlsx.manifest.files[0].sheets.length+
        ' · source-fidelity qualified=false; R5_after companion NOT_RUN';
  }catch(e){result.textContent='FAIL: '+(e.stack||e);}
 },{once:true});
