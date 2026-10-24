@@ -9,10 +9,28 @@ const AuditExport = (() => {
         if (/^\s*[=+\-@\t\r]/.test(s)) s="'"+s;
         return '"'+s.replace(/"/g,'""')+'"';
     }
+    function reportRows(audit) {
+        const result = audit.result || {};
+        const rows = (result.rows || []).map(x => ({...x,recordType:'SOURCE'}));
+        (result.extraOutput || []).forEach(x => rows.push({
+            recordType:'EXTRA_OUTPUT',sourceId:null,sourcePath:null,kind:x.kind || 'output',
+            sourceText:null,outputId:x.outputId || null,outputLocation:x.location || null,
+            outputText:x.text || '',status:'EXTRA_OUTPUT',
+            reason:'Output occurrence has no verified source correspondence'
+        }));
+        (result.diagnostics || []).forEach((x,i) => rows.push({
+            recordType:'COVERAGE_EXCEPTION',sourceId:x.sourceId || null,
+            sourcePath:x.sourcePath || x.part || null,kind:x.kind || 'coverage',
+            sourceText:null,outputId:null,outputLocation:null,outputText:null,
+            status:'COVERAGE_EXCEPTION',
+            reason:[x.feature,x.reason].filter(Boolean).join(' — ') || 'Source inventory exception '+(i+1)
+        }));
+        return rows;
+    }
     function csv(audit) {
-        const cols=['sourceId','sourcePath','kind','sourceText','outputId','outputLocation','outputText','status','reason'];
+        const cols=['recordType','sourceId','sourcePath','kind','sourceText','outputId','outputLocation','outputText','status','reason'];
         const lines=[cols.map(csvCell).join(',')];
-        (audit.result.rows||[]).forEach(row => lines.push(cols.map(k=>csvCell(row[k])).join(',')));
+        reportRows(audit).forEach(row => lines.push(cols.map(k=>csvCell(row[k])).join(',')));
         return '\ufeff'+lines.join('\r\n')+'\r\n';
     }
     function escapeHtml(v) {
@@ -30,7 +48,7 @@ const AuditExport = (() => {
         function client() {
             'use strict';
             const data=JSON.parse(document.getElementById('audit-data').textContent);
-            const rows=data.result.rows||[];
+            const rows=data.viewRows||[];
             const status=document.getElementById('status');
             status.textContent='Source '+data.result.sourceTotal+' · Extra output '+data.result.extraOutput.length+
                 ' · Coverage exceptions '+data.result.diagnostics.length;
@@ -67,7 +85,7 @@ const AuditExport = (() => {
             document.getElementById('next').addEventListener('click',()=>{page++;render();});
             render();
         }
-        const options=['All','Issues','PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','CANDIDATE_MATCH','FILTERED','MISSING','AMBIGUOUS','UNSUPPORTED','ERROR'];
+        const options=['All','Issues','PRESERVED_EXACT','PRESERVED_NORMALIZED','ALTERED','CANDIDATE_MATCH','FILTERED','MISSING','AMBIGUOUS','UNSUPPORTED','ERROR','EXTRA_OUTPUT','COVERAGE_EXCEPTION'];
         return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
             '<meta name="viewport" content="width=device-width,initial-scale=1">' +
             '<title>Word-to-Table Traceability Audit</title><style>'+style+'</style></head><body>' +
@@ -76,7 +94,7 @@ const AuditExport = (() => {
             '</select></label> <input id="search" aria-label="Search audit" placeholder="Search source, output or ID">' +
             '<button id="prev">Previous</button> <span id="page-info"></span> <button id="next">Next</button></header>' +
             '<main id="records"></main><script type="application/json" id="audit-data">' +
-            safeJson(audit)+'</script><script>('+client.toString()+')();</script></body></html>';
+            safeJson({...audit,viewRows:reportRows(audit)})+'</script><script>('+client.toString()+')();</script></body></html>';
     }
     function download(audit, kind) {
         if (!audit) throw new Error('No audit to export');
@@ -87,7 +105,7 @@ const AuditExport = (() => {
         const link=document.createElement('a');link.href=url;link.download=base+'_audit.'+(kind==='html'?'html':kind);
         link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     }
-    const api={csv,standalone,download,safeJson};
+    const api={csv,standalone,download,safeJson,reportRows};
     if(typeof module!=='undefined'&&module.exports) module.exports=api;
     return api;
 })();

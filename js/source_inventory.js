@@ -51,6 +51,11 @@ const SourceInventory = (() => {
             return obj;
         }
         function walkTable(tbl, path, parentTableId) {
+            if (parentTableId) diagnostics.push({
+                kind:'UNSUPPORTED_SOURCE_FEATURE', part:'word/document.xml',
+                feature:'nestedTable', sourcePath:path,
+                reason:'Nested table inventoried, but not independently emitted by the browser converter'
+            });
             const tableId = nodeId(path);
             const entry = {tableId, sourcePath: path, parentTableId: parentTableId || null, grid: [], cells: []};
             tables.push(entry);
@@ -74,7 +79,7 @@ const SourceInventory = (() => {
                         tableId, rowIndex: ri, cellIndex: ci,
                         colIndex: row.length, gridSpan: span,
                         vMerge: merge, paragraphs, structuralEmpty: !text,
-                        coverage: containsRevision(tc) ? 'UNSUPPORTED' : 'SUPPORTED'
+                        coverage: parentTableId || containsRevision(tc) ? 'UNSUPPORTED' : 'SUPPORTED'
                     });
                     entry.cells.push(occurrence.sourceId);
                     row.push(occurrence.sourceId);
