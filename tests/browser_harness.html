@@ -34,7 +34,7 @@ async function smoke() {
     if(cards.length!==5)throw Error('Expected 5 source occurrences, got '+cards.length);
     if(!summary.includes('MISSING'))throw Error('Missing paragraph not detected');
     if(!summary.includes('CANDIDATE_MATCH'))throw Error('Unverified extracted cells not disclosed');
-    if(frame.appState.audit.result.qualified!==false) throw Error('Post-hoc source IDs incorrectly certified');
+    if(frame.eval('appState.audit.result.qualified')!==false) throw Error('Post-hoc source IDs incorrectly certified');
     const issueCard=Array.from(cards).find(c=>c.textContent.includes('Design limits'));
     if(!issueCard || !issueCard.textContent.includes('MISSING'))throw Error('Dropped paragraph not traced');
     const config=doc.querySelector('.main-tab-btn[data-tab="settings"]');
@@ -47,16 +47,16 @@ async function smoke() {
       '</w:tc></w:tr></w:tbl></w:body></w:document>';
     const nestedDoc=new frame.DOMParser().parseFromString(nestedXml,'application/xml');
     const outer=nestedDoc.getElementsByTagNameNS(ns,'tbl')[0];
-    const actualGrid=new frame.DocxParser()._extractTableGrid(outer);
+    const actualGrid=frame.eval('new DocxParser()')._extractTableGrid(outer);
     if(actualGrid.length!==1 || actualGrid[0][0]!=='OUTER') throw Error('F5 nested table leaked into outer grid');
-    const nestedSource=frame.SourceInventory.build(nestedDoc,[]);
+    const nestedSource=frame.eval('SourceInventory').build(nestedDoc,[]);
     if(!nestedSource.hasCoverageExceptions || !nestedSource.diagnostics.some(x=>x.feature==='nestedTable'))
       throw Error('F5 nested-table limitation not declared');
     // F7: standalone reports must render orphan outputs and coverage exceptions.
-    const trial=JSON.parse(JSON.stringify(frame.appState.audit));
+    const trial=JSON.parse(JSON.stringify(frame.eval('appState.audit')));
     trial.result.extraOutput=[{outputId:'ORPHAN_OUT_777',text:'ORPHAN_TEXT_777'}];
     trial.result.diagnostics=[{part:'word/header1.xml',feature:'HEADER_EXCEPTION_777'}];
-    const report=frame.AuditExport.standalone(trial);
+    const report=frame.eval('AuditExport').standalone(trial);
     const preview=document.createElement('iframe');
     document.body.appendChild(preview);
     preview.srcdoc=report;
