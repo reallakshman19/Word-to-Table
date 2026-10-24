@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const DiffEngine = require('../js/diff_engine.js');
 function s(id,text,kind='cell',row=0,col=0,table='T') {
     return {sourceId:id,sourcePath:id,sourcePart:'word/document.xml',kind,textOriginal:text,
-        tableId:table,rowIndex:row,colIndex:col};
+        tableId:table,rowIndex:row,colIndex:col,coverage:'SUPPORTED'};
 }
 function o(id,text,sids=[],row=0,col=0,table=0) {
     return {outputId:id,kind:'cell',text,sourceIds:sids,tableIndex:table,rowIndex:row,colIndex:col,location:id};
