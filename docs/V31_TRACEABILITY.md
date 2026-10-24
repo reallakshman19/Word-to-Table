@@ -45,3 +45,10 @@ Browser mode now produces selected-table CSV files and a native OOXML XLSX bundl
 - Source inventory and legacy browser table parser now keep `w:noBreakHyphen` as U+2011 and `w:softHyphen` as U+00AD. Stripping either must not cause a false exact preservation classification.
 - The companion report is a 44-table refined report with source-numbered `t1,t3,...,t45` sections. Table #2 is omitted, but a verified filter event is not available.
 - Paired HTML is user-provided and remains local, not committed. Source-to-target counts must be qualified as text candidates rather than guaranteed source identity.
+
+## Lean G1–G3 acceptance — no revamp
+- A recognized refined tables-only companion now assigns `OUT_OF_EXPORT_SCOPE` to each top-level source paragraph, `OMITTED_UNVERIFIED` to cells in unrepresented source tables without an actual converter filter event, and `EMPTY_STRUCTURE_UNVERIFIED` to unmatched structural empties. All remain source dispositions, never automatic preservation.
+- The existing Exceptions view offers status-specific filters and includes inverse unmatched output and coverage-exception records without suppressing them behind the default source-only list.
+- CSV exports retain source table/row/cell coordinates plus original source text, extras and diagnostics; offline HTML remains searchable, and source-classification completeness is explicitly not fidelity certification.
+- The private R5 comparison's 77 hyphen-related differences, 211 header/row exceptions and 41 inverse output records remain independently maintained regression reference buckets. The generic app must not invent these exact values or claim automatic provenance for them.
+- Public CI uses invented counterexample fixtures, the checked-in public R5.docx and no user-supplied private companion HTML.

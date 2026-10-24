@@ -123,6 +123,28 @@ async function smoke() {
       throw Error('t3 source table/row hints corrupted by omitted t2');
     if(refined.occurrences.some(x=>x.text==='Pipe' || x.text==='2' || x.text==='1'))
       throw Error('Display-only group/index text leaked into audit output');
+    // G1: report omissions, source paragraphs and empty cell identities
+    // remain visible as dispositions, never as verified preservation.
+    const docmodel={
+       occurrences:[
+         {sourceId:'note',sourcePath:'/body/tbl[2]/tr[1]/tc[1]',sourcePart:'word/document.xml',
+          kind:'cell',tableId:'t2id',rowIndex:0,colIndex:0,textOriginal:'Notes',coverage:'SUPPORTED'},
+         {sourceId:'sourcepara',sourcePath:'/body/p[1]',sourcePart:'word/document.xml',
+          kind:'paragraph',textOriginal:'Requirements',coverage:'SUPPORTED'},
+         {sourceId:'emptycell',sourcePath:'/body/tbl[1]/tr[1]/tc[1]',sourcePart:'word/document.xml',
+          kind:'cell',tableId:'t1id',rowIndex:0,colIndex:0,textOriginal:'',structuralEmpty:true,coverage:'SUPPORTED'}
+       ],
+       tables:[{tableId:'t1id',parentTableId:null},{tableId:'t2id',parentTableId:null}],
+       diagnostics:[{part:'word/header1.xml',feature:'Unsupported header story'}]
+    };
+    const omittedOutput={mode:'companion',reportProfile:'R5_REFINED_TABLES',
+        sourceTableNumberHints:[1],reportFilterClaim:'Only Tables with data',
+        occurrences:[{outputId:'outputExtra',kind:'cell',text:'Unexpected target',tableIndex:0,rowIndex:1,colIndex:0}]};
+    const omissions=frame.eval('DiffEngine').compare(docmodel,{events:[]},omittedOutput,{});
+    if(omissions.statuses.OMITTED_UNVERIFIED!==1 ||
+       omissions.statuses.OUT_OF_EXPORT_SCOPE!==1 ||
+       omissions.statuses.EMPTY_STRUCTURE_UNVERIFIED!==1 ||
+       omissions.qualified!==false)throw Error('G1 source disposition regression');
     // F7: standalone reports must render orphan outputs and coverage exceptions.
     const trial=JSON.parse(JSON.stringify(frame.eval('appState.audit')));
     trial.meta.exportArtifacts=[{mode:'individual',selectedIndices:[0],preparedBytesVerified:true,

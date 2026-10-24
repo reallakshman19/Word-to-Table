@@ -72,3 +72,52 @@ test('F0: post-hoc source IDs cannot certify a generated output', () => {
     assert.equal(r.statuses.CANDIDATE_MATCH,1);
     assert.equal(r.qualified,false);
 });
+
+
+test('G1: R5-style tables-only companion accounts for source notes, paragraphs and empty structures',()=>{
+ const cells=[
+   {...s('t1-value','AAA','cell',0,0,'T1'),structuralEmpty:false},
+   {...s('t1-empty','','cell',0,1,'T1'),structuralEmpty:true},
+   {...s('t2-heading','Notes','cell',0,0,'T2'),structuralEmpty:false},
+   {...s('t2-body','Engineering requirements','cell',0,1,'T2'),structuralEmpty:false},
+   {...s('t3-value','BBB','cell',0,0,'T3'),structuralEmpty:false},
+   {sourceId:'p1',sourcePath:'/body/p[1]',sourcePart:'word/document.xml',
+    kind:'paragraph',textOriginal:'Introduction',coverage:'SUPPORTED'},
+   {sourceId:'p2',sourcePath:'/body/p[2]',sourcePart:'word/document.xml',
+    kind:'paragraph',textOriginal:'',coverage:'SUPPORTED'}
+ ];
+ const source={occurrences:cells,tables:['T1','T2','T3'].map(id=>({tableId:id,parentTableId:null})),diagnostics:[],
+   scope:'top-level paragraphs and canonical table cells'};
+ const output={mode:'companion',reportProfile:'R5_REFINED_TABLES',
+   sourceTableNumberHints:[1,3],reportFilterClaim:'Only Tables with data',
+   occurrences:[
+      {...o('out1','AAA',[],0,0,0),sourceTableId:null},
+      {...o('out3','BBB',[],0,0,2),sourceTableId:null},
+      {...o('orphan','UNKNOWN',[],1,0,2),sourceTableId:null}
+   ]};
+ const result=DiffEngine.compare(source,{events:[]},output,{});
+ assert.deepEqual(result.omittedSourceTables.map(x=>x.tableNumber),[2]);
+ assert.equal(result.statuses.OMITTED_UNVERIFIED,2);
+ assert.equal(result.statuses.OUT_OF_EXPORT_SCOPE,2);
+ assert.equal(result.statuses.EMPTY_STRUCTURE_UNVERIFIED,1);
+ assert.equal(result.statuses.CANDIDATE_MATCH,2);
+ assert.equal(result.extraOutput.length,1);
+ assert.equal(result.sourceTotal,7);
+ assert.equal(result.sourceParagraphs,2);
+ assert.equal(result.sourceEmptyCells,1);
+ assert.equal(Object.values(result.statuses).reduce((a,b)=>a+b,0),7);
+ assert.equal(result.qualified,false);
+ assert.equal(result.traceabilityVerified,false);
+ assert.equal(result.statuses.FILTERED,0); // HTML claim is not an authorized filter event
+});
+test('G2: explicit converter filter event supersedes omission but not a claim string',()=>{
+ const src=s('notes','Notes','cell',0,0,'T1');
+ const led={occurrences:[src],tables:[{tableId:'T1',parentTableId:null}],diagnostics:[]};
+ const output={mode:'companion',reportProfile:'R5_REFINED_TABLES',reportFilterClaim:'Only Tables with data',
+   sourceTableNumberHints:[],occurrences:[]};
+ const unverified=DiffEngine.compare(led,{events:[]},output,{});
+ assert.equal(unverified.statuses.OMITTED_UNVERIFIED,1);
+ const accepted=DiffEngine.compare(led,{events:[{sourceId:'notes',action:'FILTERED',ruleId:'EXPLICIT_DECISION'}]},output,{});
+ assert.equal(accepted.statuses.FILTERED,1);
+ assert.equal(accepted.qualified,false);
+});
