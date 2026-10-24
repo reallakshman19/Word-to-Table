@@ -28,6 +28,30 @@ async function smoke() {
     frame.onDocxChanged();
     await frame.extractTables();
     await frame.runDiffAndQA();
+    // F6: actual generated CSV and XLSX byte buffers, selected-table parity.
+    const exported=frame.eval('appState.tables');
+    const artifact=frame.eval('ArtifactExport');
+    const csv=await artifact.prepare(exported,[0],'individual',false,frame.eval('appState.sourceLedger'));
+    if(!csv.manifest.preparedBytesVerified||csv.manifest.originalDocxFidelityVerified)
+      throw Error('F6 CSV attestation conflated grid parity and DOCX fidelity');
+    if(csv.files.length!==1||csv.manifest.files[0].sha256.length!==64)
+      throw Error('F6 CSV selected artifact/hash missing');
+    const altered=exported.map(t=>({...t}));
+    altered[0].csv='CORRUPTED EXPORT';
+    let rejected=false;
+    try {await artifact.prepare(altered,[0],'individual',false);}catch(e){rejected=true;}
+    if(!rejected)throw Error('F6 stale CSV falsely attested');
+    const excel=await artifact.prepare(exported,[0],'combined',true,frame.eval('appState.sourceLedger'));
+    if(!excel.manifest.preparedBytesVerified||!excel.files[0].name.endsWith('.xlsx'))
+      throw Error('F6 combined XLSX exact-byte verification failed');
+    if(excel.manifest.files[0].byteLength<500)throw Error('F6 XLSX too small');
+    // Real user-facing output action should be enabled on browser-only GitHub Pages.
+    frame.eval('OutputTab').selectedItems.clear();
+    frame.eval('OutputTab').selectedItems.add(0);
+    frame.eval('OutputTab').includeLogs=false;
+    // Blob URL downloads do not guarantee file persisted to user disk.
+    // Manifest must not claim delivered-file byte verification.
+    if(excel.manifest.deliveredFileBytesVerified)throw Error('F6 claims disk bytes verified');
     const doc=frame.document;
     const cards=doc.querySelectorAll('#tab-diffhtml .audit-record');
     const summary=doc.getElementById('tab-diffhtml').textContent;
