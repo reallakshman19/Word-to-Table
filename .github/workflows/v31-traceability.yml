@@ -34,7 +34,7 @@ jobs:
           import re
           for name in ('tests/browser_harness.html', 'tests/browser_r5.html'):
               html=Path(name).read_text(encoding='utf-8')
-              scripts=re.findall(r'<script(?:\\s[^>]*)?>([\\s\\S]*?)</script>',html,re.I)
+              scripts=re.findall(r'<script(?:\s[^>]*)?>([\s\S]*?)</script>',html,re.I)
               if not scripts: raise SystemExit('No inline script: '+name)
               for i,script in enumerate(scripts):
                   Path(f'/tmp/{Path(name).stem}_{i}.js').write_text(script,encoding='utf-8')
