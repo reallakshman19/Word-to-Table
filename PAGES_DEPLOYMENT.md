@@ -1,6 +1,6 @@
 # GitHub Pages deployment
 
-The [Deploy to GitHub Pages](../.github/workflows/deploy.yml) workflow builds and publishes the static `prototype/` runtime to GitHub Pages. It runs on **every push to `main`, including pull-request merges into `main`**, and can be run manually from the Actions tab on `main`. Pushes to feature branches and pull-request updates do not deploy.
+The [Deploy to GitHub Pages](.github/workflows/deploy.yml) workflow builds and publishes the static `prototype/` runtime to GitHub Pages. It runs on **every push to `main`, including pull-request merges into `main`**, and can be run manually from the Actions tab on `main`. Pushes to feature branches and pull-request updates do not deploy.
 
 ## Required one-time repository setting
 
